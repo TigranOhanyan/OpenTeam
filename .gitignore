@@ -1,0 +1,24 @@
+.idea/
+.vscode/
+.hole/
+.metals/
+
+entities/
+
+testutil/testdata/junk/*.db
+testutil/testdata/junk/*.db*
+testutil/testdata/junk/**/*.db
+testutil/testdata/junk/**/*.db*
+!testutil/testdata/junk/keepme
+
+# VS Code
+.vscode/
+
+# IDEA
+.idea
+.idea_modules
+/.worksheet/
+
+# Cursor
+.cursor/
+
