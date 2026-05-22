@@ -389,7 +389,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message(t 
 	assert.Equal(t, actualUserThoughtMessage.Visibility, string(VisibilityHidden))
 	actualUserThoughtMessageJson, err := json.Marshal(actualUserThoughtMessage.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedUserThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"Hello Jane!\"}","name":"articulate_to_agent"},"type":"function"}],"role":"assistant"}`, messageId)
+	expectedUserThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"Hello Jane!\"}","name":"address_to_agent"},"type":"function"}],"role":"assistant"}`, messageId)
 	assert.JSONEq(t, expectedUserThoughtMessageJson, string(actualUserThoughtMessageJson))
 
 	actualUserArticulationTurn := allTurns[1]
@@ -601,7 +601,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.Equal(t, actualUserFirstThoughtMessage.Visibility, string(VisibilityHidden))
 	actualUserFirstThoughtMessageJson, err := json.Marshal(actualUserFirstThoughtMessage.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedUserFirstThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"Hello Jane!\"}","name":"articulate_to_agent"},"type":"function"}],"role":"assistant"}`, firstMessageId)
+	expectedUserFirstThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"Hello Jane!\"}","name":"address_to_agent"},"type":"function"}],"role":"assistant"}`, firstMessageId)
 	assert.JSONEq(t, expectedUserFirstThoughtMessageJson, string(actualUserFirstThoughtMessageJson))
 
 	actualUserFirstArticulationTurn := allTurns[1]
@@ -644,7 +644,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.Equal(t, actualUserSecondThoughtMessage.Visibility, string(VisibilityHidden))
 	actualUserSecondThoughtMessageJson, err := json.Marshal(actualUserSecondThoughtMessage.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedUserSecondThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"How are you?\"}","name":"articulate_to_agent"},"type":"function"}],"role":"assistant"}`, secondMessageId)
+	expectedUserSecondThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"How are you?\"}","name":"address_to_agent"},"type":"function"}],"role":"assistant"}`, secondMessageId)
 	assert.JSONEq(t, expectedUserSecondThoughtMessageJson, string(actualUserSecondThoughtMessageJson))
 
 	actualUserSecondArticulationTurn := allTurns[5]
@@ -3348,7 +3348,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 // 	assert.Len(t, lastNCommandsFromQueue, 1)
 // }
 
-func makeTeamForCallLLMTest(ctx context.Context, teamDb *TeamDb) (err error) {
+func makeTeamForCallLLMTsest(ctx context.Context, teamDb *TeamDb) (err error) {
 	q := teamDb.Queries
 
 	jane, err := q.CreateMember(ctx, entities.CreateMemberParams{

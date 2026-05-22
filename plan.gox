@@ -1,0 +1,376 @@
+package openteam
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openteam/entities"
+	"go.uber.org/zap"
+)
+
+func (a *Agent) planc(
+	ctx context.Context,
+	currentTurnId string,
+	logger *zap.Logger,
+) (
+	fanOutTurnIds TurnTransferPlan,
+	err error,
+) {
+
+	logger = logger.With(zap.String("currentTurnId", currentTurnId))
+	logger.Info("getting current turn...")
+	currentTurnRecord, err := a.ConversationHistoryDb.Queries.GetTurn(ctx, currentTurnId)
+	logger = logger.With(zap.String("currentTurnId", currentTurnRecord.ID))
+
+	logger.Info("getting duty of current turn...")
+	dutyOfcurrentTurnRecord, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, currentTurnRecord.ID)
+	if err != nil {
+		logger.Error("failed to get duty", zap.Error(err))
+		return
+	}
+	logger = logger.With(zap.String("dutyId", dutyOfcurrentTurnRecord.ID))
+
+	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, currentTurnRecord.ID, dutyOfcurrentTurnRecord, logger)
+	if err != nil {
+		logger.Error("failed to get llm response as message", zap.Error(err))
+		return
+	}
+
+	logger = logger.With(zap.String("messageId", messageId))
+
+	memberRecord, err := a.ConversationHistoryDb.Queries.GetMemberByDuty(ctx, dutyOfcurrentTurnRecord.ID)
+	if err != nil {
+		logger.Error("failed to get name", zap.Error(err))
+		return
+	}
+
+	roleOfcurrentTurnRecord, er := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, dutyOfcurrentTurnRecord.ID)
+	err = er
+	if err != nil {
+		logger.Error("failed to get role", zap.Error(err))
+		return
+	}
+
+	logger = logger.With(zap.String("roleId", roleOfcurrentTurnRecord.ID))
+	logger.Info("getting channel...")
+
+	channelRecord, er := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleOfcurrentTurnRecord.ID)
+	err = er
+	if err != nil {
+		logger.Error("failed to get channel", zap.Error(err))
+		return
+	}
+
+	completedAt := time.Now().UTC()
+
+	if param.IsOmitted(llmResponseAsMessage.OfAssistant) {
+		err = UnexpectedMessageStructureError
+		return
+	}
+
+	assistantMessage := llmResponseAsMessage.OfAssistant
+
+	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+
+	defer trx.Rollback()
+	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+
+	for _, toolCall := range assistantMessage.ToolCalls {
+		if param.IsOmitted(toolCall.OfFunction) {
+			continue
+		}
+		function := toolCall.OfFunction
+		var args map[string]interface{}
+		err = json.Unmarshal([]byte(function.Function.Arguments), &args)
+		if err != nil {
+			logger.Error("failed to unmarshal articulattion", zap.Error(err))
+			return
+		}
+		if strings.EqualFold(function.Function.Name, addressToAgentFunction.Name) {
+
+			fanOutTurnId, er := a.handleAddressing(ctx, qtx, currentTurnRecord, function.ID, channelRecord.Name, dutyOfcurrentTurnRecord.ID, args, logger)
+			err = er
+			if err != nil {
+				logger.Error("failed to handle addressing", zap.Error(err))
+				return
+			}
+			fanOutTurnIds.addressingTurnIds = append(fanOutTurnIds.addressingTurnIds, fanOutTurnId)
+		} else {
+			err = UnexpectedMessageStructureError
+			return
+		}
+	}
+
+	if !param.IsOmitted(assistantMessage.Content) {
+		replyTurnId, er := a.handleReply(ctx, qtx, currentTurnRecord, llmResponseAsMessage, messageId, logger)
+		err = er
+		if err != nil {
+			logger.Error("failed to handle reply", zap.Error(err))
+			return
+		}
+		fanOutTurnIds.replyDutyId = &replyTurnId
+		return
+	}
+
+	if !fanOutTurnIds.isOnlyControl() {
+		logger.Info("persisting message...")
+
+		setName(&llmResponseAsMessage, memberRecord.Name)
+
+		turnIntoUserMessage(&llmResponseAsMessage)
+
+		filteredLlmResponseAsMessage := filterControlToolCalls(llmResponseAsMessage)
+
+		filteredLlmResponseAsMessageBytes, er := json.Marshal(filteredLlmResponseAsMessage)
+		err = er
+		if err != nil {
+			logger.Error("failed to marshal llm response as message", zap.Error(err))
+			return
+		}
+
+		createMessageParams := entities.CreateMessageParams{
+			ID:            messageId,
+			Visibility:    string(VisibilityChannel),
+			TurnID:        currentTurnRecord.ID,
+			ChannelName:   channelRecord.Name,
+			RoleID:        roleOfcurrentTurnRecord.ID,
+			DutyID:        dutyOfcurrentTurnRecord.ID,
+			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
+		}
+
+		_, err = qtx.CreateMessage(ctx, createMessageParams)
+		if err != nil {
+			logger.Error("failed to create new message", zap.Error(err))
+			return
+		}
+	}
+
+	updateTurnStatusParams := entities.UpdateTurnStatusParams{
+		ID:          currentTurnRecord.ID,
+		Status:      string(TurnStatusCompleted),
+		CompletedAt: sql.NullTime{Time: completedAt, Valid: true},
+	}
+	_, err = qtx.UpdateTurnStatus(ctx, updateTurnStatusParams)
+	if err != nil {
+		logger.Error("failed to update current turn", zap.Error(err))
+		return
+	}
+
+	err = trx.Commit()
+	if err != nil {
+		logger.Error("failed to commit transaction", zap.Error(err))
+		return
+	}
+
+	return
+
+}
+
+func (a *Agent) handleAddressing(
+	ctx context.Context,
+	qtx *entities.Queries,
+	currentTurnRecord entities.Turn,
+	toolCallId string,
+	channelName string,
+	fromMemberDutyId string,
+	arguments map[string]interface{},
+	logger *zap.Logger,
+) (
+	turnId string,
+	err error,
+) {
+
+	toMemberName := arguments["agent_name"].(string)
+	if toMemberName == "" {
+		err = InvalidAddressingArgumentsError
+		return
+	}
+	message := arguments["message"].(string)
+	if message == "" {
+		err = InvalidAddressingArgumentsError
+		return
+	}
+
+	turnId = ulid.Make().String()
+	turnParams := entities.CreateTurnParams{
+		ID:     turnId,
+		DutyID: currentTurnRecord.DutyID,
+		Kind:   string(EventKindAddressing),
+		Status: string(TurnStatusPending),
+	}
+	turnRecord, err := qtx.CreateTurn(ctx, turnParams)
+
+	if err != nil {
+		return
+	}
+
+	addressingId := ulid.Make().String()
+
+	createAddressingParams := entities.CreateAddressingParams{
+		ID:               addressingId,
+		TurnID:           turnId,
+		ToolCallID:       toolCallId,
+		FromMemberDutyID: fromMemberDutyId,
+		ToMemberName:     toMemberName,
+		Message:          message,
+	}
+
+	addressingRecord, err := qtx.CreateAddressing(ctx, createAddressingParams)
+	if err != nil {
+		return
+	}
+
+	a.ChangeStream <- ChangeEvent{
+		Kind:        CdcEventKindAddressing,
+		TurnID:      turnRecord.ID,
+		ChannelName: channelName,
+		Addressing: &entities.Addressing{
+			ID:               addressingRecord.ID,
+			TurnID:           turnRecord.ID,
+			FromMemberDutyID: addressingRecord.FromMemberDutyID,
+			ToMemberName:     addressingRecord.ToMemberName,
+			ToolCallID:       addressingRecord.ToolCallID,
+			Message:          addressingRecord.Message,
+		},
+	}
+
+	return
+}
+
+func (a *Agent) handleReply(
+	ctx context.Context,
+	qtx *entities.Queries,
+	currentTurnRecord entities.Turn,
+	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
+	messageId string,
+	logger *zap.Logger,
+) (
+	turnId string,
+	err error,
+) {
+
+	logger.Info("persisting message...")
+	createTurnParams := entities.CreateTurnParams{
+		ID:     ulid.Make().String(),
+		DutyID: currentTurnRecord.DutyID,
+		Kind:   string(EventKindReplying),
+		Status: string(TurnStatusPending),
+	}
+	turnRecord, er := qtx.CreateTurn(ctx, createTurnParams)
+	err = er
+	if err != nil {
+		logger.Error("failed to create current turn", zap.Error(err))
+		return
+	}
+
+	turnId = turnRecord.ID
+
+	return
+}
+
+func (a *Agent) llmResponseToMessage(
+	ctx context.Context,
+	turnId string,
+	duty entities.Duty,
+	logger *zap.Logger,
+) (
+	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
+	messageId string,
+	err error,
+) {
+
+	if duty.StreamMode {
+		logger.Info("getting LLM chunk response...")
+		llmChunkResponseRecords, er := a.ConversationHistoryDb.Queries.GetLlmChunkResponseByTurn(ctx, turnId)
+		err = er
+		if err != nil {
+			logger.Error("failed to get LLM chunk response", zap.Error(err))
+			return
+		}
+
+		if len(llmChunkResponseRecords) == 0 {
+			logger.Error("no chunks in LLM chunk response")
+			err = fmt.Errorf("no chunks in LLM chunk response")
+			return
+		}
+
+		messageId = llmChunkResponseRecords[0].ID
+
+		acc := openai.ChatCompletionAccumulator{}
+		for _, record := range llmChunkResponseRecords {
+			var chunk openai.ChatCompletionChunk
+			err = json.Unmarshal(record.OpenaiChunkResponse, &chunk)
+			if err != nil {
+				logger.Error("failed to unmarshal llm chunk", zap.Error(err))
+				return
+			}
+			acc.AddChunk(chunk)
+		}
+
+		choices := acc.Choices
+		amountOfChoices := len(choices)
+		if amountOfChoices == 0 {
+			logger.Error("no choices in accumulated LLM chunk response")
+			err = fmt.Errorf("no choices in accumulated LLM chunk response")
+			return
+		}
+
+		if amountOfChoices > 1 {
+			logger.Error("multiple choices in accumulated LLM chunk response", zap.Int("count", amountOfChoices))
+			err = fmt.Errorf("multiple choices in accumulated LLM chunk response")
+			return
+		}
+		choice := choices[0]
+
+		llmResponseAsMessage = choice.Message.ToParam()
+
+	} else {
+		logger.Info("getting LLM response...")
+		llmResponseRecord, er := a.ConversationHistoryDb.Queries.GetLlmResponseByTurn(ctx, turnId)
+		err = er
+		if err != nil {
+			logger.Error("failed to get LLM response", zap.Error(err))
+			return
+		}
+
+		messageId = llmResponseRecord.ID
+
+		llmResponseJson := llmResponseRecord.OpenaiResponse
+
+		var llmResponse openai.ChatCompletion
+		err = json.Unmarshal(llmResponseJson, &llmResponse)
+		if err != nil {
+			logger.Error("failed to unmarshal llm response", zap.Error(err))
+			return
+		}
+
+		choices := llmResponse.Choices
+		amountOfChoices := len(choices)
+		if amountOfChoices == 0 {
+			logger.Error("no choices in LLM response")
+			err = fmt.Errorf("no choices in LLM response")
+			return
+		}
+
+		if amountOfChoices > 1 {
+			logger.Error("multiple choices in LLM response", zap.Int("count", amountOfChoices))
+			err = fmt.Errorf("multiple choices in LLM response")
+			return
+		}
+		choice := choices[0]
+
+		llmResponseAsMessage = choice.Message.ToParam()
+	}
+	return
+}

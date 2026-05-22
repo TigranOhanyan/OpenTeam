@@ -1,0 +1,253 @@
+package openteam
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openteam/entities"
+	"go.uber.org/zap"
+)
+
+var ErrEmptyOrchestrationPlan = errors.New("empty orchestration plan")
+
+type TurnTransferPlan struct {
+	replyDutyId       *string
+	addressingDutyIds []string
+	actingDutyIds     []string
+}
+
+func (o *TurnTransferPlan) isOnlyControl() bool {
+	return o.replyDutyId == nil && len(o.addressingDutyIds) != 0 && len(o.actingDutyIds) == 0
+}
+
+func (o *TurnTransferPlan) isFinalReply() bool {
+	return o.replyDutyId != nil && len(o.addressingDutyIds) == 0 && len(o.actingDutyIds) == 0
+}
+
+func (o *TurnTransferPlan) isEmpty() bool {
+	return o.replyDutyId == nil && len(o.addressingDutyIds) == 0 && len(o.actingDutyIds) == 0
+}
+
+func (o *TurnTransferPlan) getFirstTurnId() (turnId string, err error) {
+	if o.replyDutyId != nil {
+		turnId = *o.replyDutyId
+		return
+	}
+
+	if len(o.addressingDutyIds) > 0 {
+		turnId = o.addressingDutyIds[0]
+		return
+	}
+	if len(o.actingDutyIds) > 0 {
+		turnId = o.actingDutyIds[0]
+		return
+	}
+
+	err = ErrEmptyOrchestrationPlan
+	return
+}
+
+func transfer121(
+	ctx context.Context,
+	qtx *entities.Queries,
+	currentTurnId string,
+	nextTurnKind EventKind,
+	nextTurnDutyId string,
+	logger *zap.Logger,
+) (
+	nextTurnId string,
+	err error,
+) {
+	nextTurnRecordParams := entities.CreateTurnParams{
+		ID:     ulid.Make().String(),
+		DutyID: nextTurnDutyId,
+		Kind:   string(nextTurnKind),
+		Status: string(TurnStatusPending),
+	}
+	nextTurnRecord, err := qtx.CreateTurn(ctx, nextTurnRecordParams)
+	if err != nil {
+		logger.Error("failed to create current turn", zap.Error(err))
+		return
+	}
+
+	createTurnLinkParams := entities.CreateTurnLinkParams{
+		PrevID: currentTurnId,
+		NextID: nextTurnRecord.ID,
+	}
+	_, err = qtx.CreateTurnLink(ctx, createTurnLinkParams)
+	if err != nil {
+		logger.Error("failed to create turn link", zap.Error(err))
+		return
+	}
+
+	nextTurnId = nextTurnRecord.ID
+	return
+}
+
+func (fanOut TurnTransferPlan) transferFanOut(
+	ctx context.Context,
+	currentTurnId string,
+	logger *zap.Logger,
+) (
+	fanOutTurnIds Plan,
+	err error,
+) {
+
+	logger = logger.With(zap.String("currentTurnId", currentTurnId))
+	logger.Info("getting current turn...")
+	currentTurnRecord, err := a.ConversationHistoryDb.Queries.GetTurn(ctx, currentTurnId)
+	logger = logger.With(zap.String("currentTurnId", currentTurnRecord.ID))
+
+	logger.Info("getting duty of current turn...")
+	dutyOfcurrentTurnRecord, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, currentTurnRecord.ID)
+	if err != nil {
+		logger.Error("failed to get duty", zap.Error(err))
+		return
+	}
+	logger = logger.With(zap.String("dutyId", dutyOfcurrentTurnRecord.ID))
+
+	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, currentTurnRecord.ID, dutyOfcurrentTurnRecord, logger)
+	if err != nil {
+		logger.Error("failed to get llm response as message", zap.Error(err))
+		return
+	}
+
+	logger = logger.With(zap.String("messageId", messageId))
+
+	memberRecord, err := a.ConversationHistoryDb.Queries.GetMemberByDuty(ctx, dutyOfcurrentTurnRecord.ID)
+	if err != nil {
+		logger.Error("failed to get name", zap.Error(err))
+		return
+	}
+
+	roleOfcurrentTurnRecord, er := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, dutyOfcurrentTurnRecord.ID)
+	err = er
+	if err != nil {
+		logger.Error("failed to get role", zap.Error(err))
+		return
+	}
+
+	logger = logger.With(zap.String("roleId", roleOfcurrentTurnRecord.ID))
+	logger.Info("getting channel...")
+
+	channelRecord, er := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleOfcurrentTurnRecord.ID)
+	err = er
+	if err != nil {
+		logger.Error("failed to get channel", zap.Error(err))
+		return
+	}
+
+	completedAt := time.Now().UTC()
+
+	if param.IsOmitted(llmResponseAsMessage.OfAssistant) {
+		err = UnexpectedMessageStructureError
+		return
+	}
+
+	assistantMessage := llmResponseAsMessage.OfAssistant
+
+	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+
+	defer trx.Rollback()
+	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+
+	for _, toolCall := range assistantMessage.ToolCalls {
+		if param.IsOmitted(toolCall.OfFunction) {
+			continue
+		}
+		function := toolCall.OfFunction
+		var args map[string]interface{}
+		err = json.Unmarshal([]byte(function.Function.Arguments), &args)
+		if err != nil {
+			logger.Error("failed to unmarshal articulattion", zap.Error(err))
+			return
+		}
+		if strings.EqualFold(function.Function.Name, addressToAgentFunction.Name) {
+
+			fanOutTurnId, er := a.handleAddressing(ctx, qtx, currentTurnRecord, function.ID, channelRecord.Name, dutyOfcurrentTurnRecord.ID, args, logger)
+			err = er
+			if err != nil {
+				logger.Error("failed to handle addressing", zap.Error(err))
+				return
+			}
+			fanOutTurnIds.addressingTurnIds = append(fanOutTurnIds.addressingTurnIds, fanOutTurnId)
+		} else {
+			err = UnexpectedMessageStructureError
+			return
+		}
+	}
+
+	if !param.IsOmitted(assistantMessage.Content) {
+		replyTurnId, er := a.handleReply(ctx, qtx, currentTurnRecord, llmResponseAsMessage, messageId, logger)
+		err = er
+		if err != nil {
+			logger.Error("failed to handle reply", zap.Error(err))
+			return
+		}
+		fanOutTurnIds.replyDutyId = &replyTurnId
+		return
+	}
+
+	if !fanOutTurnIds.isOnlyControl() {
+		logger.Info("persisting message...")
+
+		setName(&llmResponseAsMessage, memberRecord.Name)
+
+		turnIntoUserMessage(&llmResponseAsMessage)
+
+		filteredLlmResponseAsMessage := filterControlToolCalls(llmResponseAsMessage)
+
+		filteredLlmResponseAsMessageBytes, er := json.Marshal(filteredLlmResponseAsMessage)
+		err = er
+		if err != nil {
+			logger.Error("failed to marshal llm response as message", zap.Error(err))
+			return
+		}
+
+		createMessageParams := entities.CreateMessageParams{
+			ID:            messageId,
+			Visibility:    string(VisibilityChannel),
+			TurnID:        currentTurnRecord.ID,
+			ChannelName:   channelRecord.Name,
+			RoleID:        roleOfcurrentTurnRecord.ID,
+			DutyID:        dutyOfcurrentTurnRecord.ID,
+			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
+		}
+
+		_, err = qtx.CreateMessage(ctx, createMessageParams)
+		if err != nil {
+			logger.Error("failed to create new message", zap.Error(err))
+			return
+		}
+	}
+
+	updateTurnStatusParams := entities.UpdateTurnStatusParams{
+		ID:          currentTurnRecord.ID,
+		Status:      string(TurnStatusCompleted),
+		CompletedAt: sql.NullTime{Time: completedAt, Valid: true},
+	}
+	_, err = qtx.UpdateTurnStatus(ctx, updateTurnStatusParams)
+	if err != nil {
+		logger.Error("failed to update current turn", zap.Error(err))
+		return
+	}
+
+	err = trx.Commit()
+	if err != nil {
+		logger.Error("failed to commit transaction", zap.Error(err))
+		return
+	}
+
+	return
+
+}

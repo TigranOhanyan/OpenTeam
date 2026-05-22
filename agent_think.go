@@ -2,10 +2,8 @@ package openteam
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/openai/openai-go/v3"
@@ -14,76 +12,52 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *Agent) callLLM(
+func (a *Agent) think(
 	ctx context.Context,
-	previousTurnId string,
+	turnRecord entities.Turn,
+	addressing Addressing,
 	logger *zap.Logger,
 ) (
-	currentTurnId string,
+	reply Reply,
 	err error,
 ) {
+	logger = logger.With(zap.String("turnId", turnRecord.ID))
 
-	logger = logger.With(zap.String("previousTurnId", previousTurnId))
-	logger.Info("getting previous turn...")
-
-	previousTurnRecord, err := a.ConversationHistoryDb.Queries.GetTurn(ctx, previousTurnId)
+	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
-		logger.Error("failed to get turn", zap.Error(err))
+		logger.Error("failed to begin transaction", zap.Error(err))
 		return
 	}
 
-	logger.Info("getting duty...")
+	defer func() {
+		if err != nil {
+			trx.Rollback()
+		}
+	}()
 
-	dutyRecord, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, previousTurnRecord.ID)
+	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+
+	planningTurnRecord, err := createTurn(ctx, qtx, EventKindPlanning, logger)
 	if err != nil {
-		logger.Error("failed to get persona", zap.Error(err))
+		logger.Error("failed to create planning turn", zap.Error(err))
 		return
 	}
 
-	memberRecord, err := a.ConversationHistoryDb.Queries.GetMemberByDuty(ctx, dutyRecord.ID)
+	err = linkTurns(ctx, qtx, turnRecord.ID, planningTurnRecord.ID, logger)
 	if err != nil {
-		logger.Error("failed to get name", zap.Error(err))
-		return
-	}
-	logger = logger.With(zap.String("name", memberRecord.Name))
-
-	currentTurnRecord, err := a.ConversationHistoryDb.Queries.CreateTurn(ctx, entities.CreateTurnParams{
-		ID:     ulid.Make().String(),
-		Kind:   string(EventKindThinking),
-		Status: string(TurnStatusPending),
-	})
-	if err != nil {
-		logger.Error("failed to create current turn", zap.Error(err))
+		logger.Error("failed to link turns", zap.Error(err))
 		return
 	}
 
-	logger = logger.With(zap.String("currentTurnId", currentTurnRecord.ID))
-	logger.Info("getting role...")
-
-	roleRecord, err := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, dutyRecord.ID)
-	if err != nil {
-		logger.Error("failed to get role", zap.Error(err))
-		return
-	}
-
-	logger = logger.With(zap.String("roleId", roleRecord.ID))
-	logger.Info("getting channel...")
-
-	channelRecord, err := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleRecord.ID)
-	if err != nil {
-		logger.Error("failed to get channel", zap.Error(err))
-		return
-	}
-
-	logger = logger.With(zap.String("channelId", channelRecord.Name))
+	logger = logger.With(zap.String("channelId", addressing.channelName))
 	logger.Info("getting messages...")
 
 	getContextMessagesParams := entities.GetContextMessagesParams{
-		DutyID:      dutyRecord.ID,
-		RoleID:      roleRecord.ID,
-		ChannelName: channelRecord.Name,
+		DutyID:      addressing.toDuty.ID,
+		RoleID:      addressing.toRoleID,
+		ChannelName: addressing.channelName,
 	}
-	messageRecords, err := a.ConversationHistoryDb.Queries.GetContextMessages(ctx, getContextMessagesParams)
+	messageRecords, err := qtx.GetContextMessages(ctx, getContextMessagesParams)
 	if err != nil {
 		logger.Error("failed to get messages", zap.Error(err))
 		return
@@ -101,12 +75,12 @@ func (a *Agent) callLLM(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		turnIntoAssistantMessage(&openAiMessage, memberRecord.Name)
+		turnIntoAssistantMessage(&openAiMessage, addressing.toMemberName)
 		openAiMessages[i] = openAiMessage
 	}
 
 	chatParams := openai.ChatCompletionNewParams{
-		Model:       dutyRecord.Model,
+		Model:       addressing.toDuty.Model,
 		Messages:    openAiMessages,
 		N:           param.NewOpt(AmountOfChoices),
 		Temperature: param.NewOpt(Temperature),
@@ -116,7 +90,7 @@ func (a *Agent) callLLM(
 	responseId := ulid.Make().String()
 	logger = logger.With(zap.String("responseId", responseId))
 
-	if dutyRecord.StreamMode {
+	if addressing.toDuty.StreamMode {
 		logger.Info("calling LLM in stream mode...")
 		// 1. Start the stream
 		stream := a.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
@@ -143,11 +117,11 @@ func (a *Agent) callLLM(
 			createChunkParams := entities.CreateLlmChunkResponsesParams{
 				ID:                  responseId,
 				SequenceNumber:      int64(sequenceNumber),
-				TurnID:              currentTurnRecord.ID,
-				DutyID:              dutyRecord.ID,
+				TurnID:              planningTurnRecord.ID,
+				DutyID:              addressing.toDuty.ID,
 				OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 			}
-			err = a.insertChunk(ctx, createChunkParams)
+			err = a.insertChunk(ctx, qtx, createChunkParams, logger)
 			if err != nil {
 				logger.Error("failed to insert chunk", zap.Error(err))
 				return
@@ -157,18 +131,6 @@ func (a *Agent) callLLM(
 		// 4. Check for stream errors
 		if err = stream.Err(); err != nil {
 			logger.Error("stream error", zap.Error(err))
-			return
-		}
-		// 5. Mark the turn as completed
-		now := time.Now().UTC()
-		updateTurnStatusParams := entities.UpdateTurnStatusParams{
-			ID:          currentTurnRecord.ID,
-			Status:      string(TurnStatusCompleted),
-			CompletedAt: sql.NullTime{Time: now, Valid: true},
-		}
-		_, err = a.ConversationHistoryDb.Queries.UpdateTurnStatus(ctx, updateTurnStatusParams)
-		if err != nil {
-			logger.Error("failed to update current turn", zap.Error(err))
 			return
 		}
 
@@ -199,19 +161,6 @@ func (a *Agent) callLLM(
 
 		logger.Info("LLM called successfully")
 
-		now := time.Now().UTC()
-		updateTurnStatusParams := entities.UpdateTurnStatusParams{
-			ID:          currentTurnRecord.ID,
-			Status:      string(TurnStatusCompleted),
-			CompletedAt: sql.NullTime{Time: now, Valid: true},
-		}
-
-		_, err = a.ConversationHistoryDb.Queries.UpdateTurnStatus(ctx, updateTurnStatusParams)
-		if err != nil {
-			logger.Error("failed to update current turn", zap.Error(err))
-			return
-		}
-
 		llmResponseBytes, er := json.Marshal(llmResponse)
 		err = er
 		if err != nil {
@@ -221,12 +170,12 @@ func (a *Agent) callLLM(
 
 		createLlmResponseParams := entities.CreateLlmResponseParams{
 			ID:             responseId,
-			DutyID:         dutyRecord.ID,
-			TurnID:         currentTurnRecord.ID,
+			DutyID:         addressing.toDuty.ID,
+			TurnID:         planningTurnRecord.ID,
 			OpenaiResponse: json.RawMessage(llmResponseBytes),
 		}
 
-		_, err = a.ConversationHistoryDb.Queries.CreateLlmResponse(ctx, createLlmResponseParams)
+		_, err = qtx.CreateLlmResponse(ctx, createLlmResponseParams)
 		if err != nil {
 			logger.Error("failed to create new response", zap.Error(err))
 			return
@@ -234,7 +183,17 @@ func (a *Agent) callLLM(
 
 	}
 
-	currentTurnId = currentTurnRecord.ID
+	err = trx.Commit()
+	if err != nil {
+		logger.Error("failed to commit transaction", zap.Error(err))
+		return
+	}
+
+	reply, err = a.analyze(ctx, planningTurnRecord, addressing, logger)
+	if err != nil {
+		logger.Error("failed to think", zap.Error(err))
+		return
+	}
 
 	return
 }
@@ -279,4 +238,11 @@ func turnIntoAssistantMessage(
 		Name:    message.OfUser.Name,
 	}
 	message.OfUser = nil
+
+	return
+}
+
+type ReplyOrThinkOver struct {
+	reply         *Reply
+	addressingIds []string
 }

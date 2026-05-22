@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -13,71 +14,54 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *Agent) articulateToAgent(
+func (a *Agent) addressToAgent(
 	ctx context.Context,
-	previousTurnId string,
+	qtx *entities.Queries,
+	currentTurnId string,
 	logger *zap.Logger,
 ) (
-	currentTurnId string,
+	dutyId string,
 	err error,
 ) {
 
-	logger = logger.With(zap.String("previousTurnId", previousTurnId))
-	logger.Info("getting previous turn...")
+	logger = logger.With(zap.String("currentTurnId", currentTurnId))
+	logger.Info("getting current turn...")
 
-	previousTurnRecord, err := a.ConversationHistoryDb.Queries.GetTurn(ctx, previousTurnId)
+	currentTurnRecord, err := qtx.GetTurn(ctx, currentTurnId)
 	if err != nil {
 		logger.Error("failed to get turn", zap.Error(err))
 		return
 	}
-	logger = logger.With(zap.String("previousTurnId", previousTurnRecord.ID))
 
-	dutyOfPreviousTurnRecord, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, previousTurnRecord.ID)
-	if err != nil {
-		logger.Error("failed to get persona", zap.Error(err))
-		return
-	}
-	logger = logger.With(zap.String("dutyId", dutyOfPreviousTurnRecord.ID))
+	logger = logger.With(zap.String("dutyId", currentTurnRecord.DutyID))
 
-	roleOfPreviousTurnRecord, err := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, dutyOfPreviousTurnRecord.ID)
+	fromRoleRecord, err := qtx.GetRoleByDuty(ctx, currentTurnRecord.DutyID)
 	if err != nil {
 		logger.Error("failed to get role", zap.Error(err))
 		return
 	}
-	logger = logger.With(zap.String("roleId", roleOfPreviousTurnRecord.ID))
+	logger = logger.With(zap.String("roleId", fromRoleRecord.ID))
 
-	channelRecord, err := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleOfPreviousTurnRecord.ID)
+	channelRecord, err := qtx.GetChannelByRole(ctx, fromRoleRecord.ID)
 	if err != nil {
 		logger.Error("failed to get channel", zap.Error(err))
 		return
 	}
 	logger = logger.With(zap.String("channelId", channelRecord.Name))
 
-	createTurnParams := entities.CreateTurnParams{
-		ID:     ulid.Make().String(),
-		Kind:   string(EventKindArticulation),
-		Status: string(TurnStatusPending),
-	}
-
-	currentTurnRecord, err := a.ConversationHistoryDb.Queries.CreateTurn(ctx, createTurnParams)
+	addressingRecord, err := qtx.GetAddressingByTurn(ctx, currentTurnRecord.ID)
 	if err != nil {
-		logger.Error("failed to create current turn", zap.Error(err))
+		logger.Error("failed to get addressing", zap.Error(err))
 		return
 	}
 
-	articulationRecord, err := a.ConversationHistoryDb.Queries.GetArticulationByTurn(ctx, previousTurnRecord.ID)
-	if err != nil {
-		logger.Error("failed to get articulation", zap.Error(err))
-		return
-	}
-
-	fromMemberRecord, err := a.ConversationHistoryDb.Queries.GetMember(ctx, articulationRecord.FromMemberName)
+	fromMemberRecord, err := qtx.GetMemberByDuty(ctx, addressingRecord.FromMemberDutyID)
 	if err != nil {
 		logger.Error("failed to get from member", zap.Error(err))
 		return
 	}
 
-	toMemberRecord, err := a.ConversationHistoryDb.Queries.GetMember(ctx, articulationRecord.ToMemberName)
+	toMemberRecord, err := qtx.GetMember(ctx, addressingRecord.ToMemberName)
 	if err != nil {
 		logger.Error("failed to get to participant", zap.Error(err))
 		return
@@ -88,22 +72,24 @@ func (a *Agent) articulateToAgent(
 		ChannelName: channelRecord.Name,
 	}
 
-	toRoleRecord, err := a.ConversationHistoryDb.Queries.GetRoleByMemberAndChannel(ctx, toRoleByMemberAndChannelParams)
+	toRoleRecord, err := qtx.GetRoleByMemberAndChannel(ctx, toRoleByMemberAndChannelParams)
 	if err != nil {
 		logger.Error("failed to get to membership", zap.Error(err))
 		return
 	}
 
-	toDutyRecord, err := a.ConversationHistoryDb.Queries.GetFirstDuty(ctx, toRoleRecord.ID)
+	toDutyRecord, err := qtx.GetFirstDuty(ctx, toRoleRecord.ID)
 	if err != nil {
 		logger.Error("failed to get to persona", zap.Error(err))
 		return
 	}
 
+	addressingMessage := fmt.Sprintf("%s! %s", toMemberRecord.Name, addressingRecord.Message)
+
 	openAiMessage := openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{
 			Content: openai.ChatCompletionUserMessageParamContentUnion{
-				OfString: param.NewOpt(articulationRecord.Message),
+				OfString: param.NewOpt(addressingMessage),
 			},
 			Name: param.NewOpt(fromMemberRecord.Name),
 		},
@@ -115,8 +101,6 @@ func (a *Agent) articulateToAgent(
 		return
 	}
 
-	completedAt := time.Now().UTC()
-
 	createMessageParams := entities.CreateMessageParams{
 		ID:            ulid.Make().String(),
 		OpenaiMessage: json.RawMessage(openAiMessageBytes),
@@ -126,24 +110,27 @@ func (a *Agent) articulateToAgent(
 		RoleID:        toRoleRecord.ID,
 		DutyID:        toDutyRecord.ID,
 	}
-	_, err = a.ConversationHistoryDb.Queries.CreateMessage(ctx, createMessageParams)
+	_, err = qtx.CreateMessage(ctx, createMessageParams)
 	if err != nil {
 		logger.Error("failed to create new message", zap.Error(err))
 		return
 	}
+
+	completedAt := time.Now().UTC()
 
 	updateTurnStatusParams := entities.UpdateTurnStatusParams{
 		ID:          currentTurnRecord.ID,
 		Status:      string(TurnStatusCompleted),
 		CompletedAt: sql.NullTime{Time: completedAt, Valid: true},
 	}
-	_, err = a.ConversationHistoryDb.Queries.UpdateTurnStatus(ctx, updateTurnStatusParams)
+	_, err = qtx.UpdateTurnStatus(ctx, updateTurnStatusParams)
 	if err != nil {
 		logger.Error("failed to update current turn", zap.Error(err))
 		return
 	}
 
-	currentTurnId = currentTurnRecord.ID
+	dutyId = toDutyRecord.ID
+
 	return
 
 }

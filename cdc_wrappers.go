@@ -4,20 +4,26 @@ import (
 	"context"
 
 	"github.com/openteam/entities"
+	"go.uber.org/zap"
 )
 
-func (a *Agent) insertChunk(ctx context.Context, params entities.CreateLlmChunkResponsesParams) error {
-	_, err := a.ConversationHistoryDb.Queries.CreateLlmChunkResponses(ctx, params)
+func (a *Agent) insertChunk(
+	ctx context.Context,
+	qtx *entities.Queries,
+	params entities.CreateLlmChunkResponsesParams,
+	logger *zap.Logger,
+) error {
+	_, err := qtx.CreateLlmChunkResponses(ctx, params)
 	if err != nil {
 		return err
 	}
 
 	if a.ChangeStream != nil {
-		roleRecord, err := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, params.DutyID)
+		roleRecord, err := qtx.GetRoleByDuty(ctx, params.DutyID)
 		if err != nil {
 			return err
 		}
-		channelRecord, err := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleRecord.ID)
+		channelRecord, err := qtx.GetChannelByRole(ctx, roleRecord.ID)
 		if err != nil {
 			return err
 		}
@@ -38,22 +44,27 @@ func (a *Agent) insertChunk(ctx context.Context, params entities.CreateLlmChunkR
 	return nil
 }
 
-func (a *Agent) insertAction(ctx context.Context, params entities.CreateActionParams) error {
-	_, err := a.ConversationHistoryDb.Queries.CreateAction(ctx, params)
+func (a *Agent) insertAction(
+	ctx context.Context,
+	qtx *entities.Queries,
+	params entities.CreateActionParams,
+	logger *zap.Logger,
+) error {
+	_, err := qtx.CreateAction(ctx, params)
 	if err != nil {
 		return err
 	}
 
 	if a.ChangeStream != nil {
-		dutyRecord, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, params.TurnID)
+		dutyRecord, err := qtx.GetDutyByTurn(ctx, params.TurnID)
 		if err != nil {
 			return err
 		}
-		roleRecord, err := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, dutyRecord.ID)
+		roleRecord, err := qtx.GetRoleByDuty(ctx, dutyRecord.ID)
 		if err != nil {
 			return err
 		}
-		channelRecord, err := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleRecord.ID)
+		channelRecord, err := qtx.GetChannelByRole(ctx, roleRecord.ID)
 		if err != nil {
 			return err
 		}
@@ -74,37 +85,42 @@ func (a *Agent) insertAction(ctx context.Context, params entities.CreateActionPa
 	return nil
 }
 
-func (a *Agent) insertArticulation(ctx context.Context, params entities.CreateArticulationParams) error {
-	_, err := a.ConversationHistoryDb.Queries.CreateArticulation(ctx, params)
+func (a *Agent) insertAddressing(
+	ctx context.Context,
+	qtx *entities.Queries,
+	params entities.CreateAddressingParams,
+	logger *zap.Logger,
+) error {
+	_, err := qtx.CreateAddressing(ctx, params)
 	if err != nil {
 		return err
 	}
 
 	if a.ChangeStream != nil {
-		dutyRecord, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, params.TurnID)
+		dutyRecord, err := qtx.GetDutyByTurn(ctx, params.TurnID)
 		if err != nil {
 			return err
 		}
-		roleRecord, err := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, dutyRecord.ID)
+		roleRecord, err := qtx.GetRoleByDuty(ctx, dutyRecord.ID)
 		if err != nil {
 			return err
 		}
-		channelRecord, err := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleRecord.ID)
+		channelRecord, err := qtx.GetChannelByRole(ctx, roleRecord.ID)
 		if err != nil {
 			return err
 		}
 
 		a.ChangeStream <- ChangeEvent{
-			Kind:        CdcEventKindArticulation,
+			Kind:        CdcEventKindAddressing,
 			TurnID:      params.TurnID,
 			ChannelName: channelRecord.Name,
-			Articulation: &entities.Articulation{
-				ID:             params.ID,
-				TurnID:         params.TurnID,
-				FromMemberName: params.FromMemberName,
-				ToMemberName:   params.ToMemberName,
-				ToolCallID:     params.ToolCallID,
-				Message:        params.Message,
+			Addressing: &entities.Addressing{
+				ID:               params.ID,
+				TurnID:           params.TurnID,
+				FromMemberDutyID: params.FromMemberDutyID,
+				ToMemberName:     params.ToMemberName,
+				ToolCallID:       params.ToolCallID,
+				Message:          params.Message,
 			},
 		}
 	}

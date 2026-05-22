@@ -12,12 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openai/openai-go/v3"
 	"github.com/openteam/entities"
 	"github.com/stretchr/testify/assert"
 	"github.com/wiremock/go-wiremock"
 )
 
-func Test_Agent_should_call_llm_in_stream_mode(t *testing.T) {
+func Test_Agent_should_call_llm_when_thinking(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -30,11 +31,11 @@ func Test_Agent_should_call_llm_in_stream_mode(t *testing.T) {
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "aganet_should_call_llm_in_stream_mode.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_when_thinking.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForCallLLMTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -43,23 +44,44 @@ func Test_Agent_should_call_llm_in_stream_mode(t *testing.T) {
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello Jane!", "name": "Jim"}
+				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0,
-  			"stream": true
+			"temperature": 1.0
 		}`
 
-	responseChunk1 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi! "},"finish_reason":null}]}`
-	responseChunk2 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"content":"I am Jane."},"finish_reason":null}]}`
-	responseChunk3 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
-	responseChunk4 :=
-		`[DONE]`
-
-	responseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\ndata: %s\n\n", responseChunk1, responseChunk2, responseChunk3, responseChunk4)
+	responseBodyJson :=
+		`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-5",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "Hi! I am Jane.",
+						"tool_calls": null,
+						"function_call": { "name": "", "arguments": "" },
+						"refusal": "",
+						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
+						"annotations": null
+					},
+					"finish_reason": "stop",
+					"logprobs": { "content": null, "refusal": null }
+				}
+			],
+			"usage": {
+				"prompt_tokens": 15,
+				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"completion_tokens": 30,
+				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"total_tokens": 45
+			},
+			"system_fingerprint": "",
+			"service_tier": ""
+		}`
 
 	requestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
@@ -69,25 +91,27 @@ func Test_Agent_should_call_llm_in_stream_mode(t *testing.T) {
 		WillReturnResponse(
 			wiremock.NewResponse().
 				WithStatus(http.StatusOK).
-				WithHeader("Content-Type", "text/event-stream").
-				WithHeader("Cache-Control", "no-cache").
-				WithHeader("Connection", "keep-alive").
-				WithBody(responseBodySse),
+				WithHeader("Content-Type", "application/json").
+				WithBody(responseBodyJson),
 		).
 		WillSetStateTo("first-message-received")
 
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	messageId, err := agent.Acknowledge(ctx, "Jim", "lobby", "Hello Jane!", testLogger)
+	reply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotNil(t, messageId)
+	assert.NotNil(t, reply)
+	assert.Equal(t, 1, len(reply.replyTurnIds))
+	actualReplyTurnId := reply.replyTurnIds[0]
 
-	replyMessageId, reply, replyerName, err := agent.Reply(ctx, messageId, testLogger)
+	actualReplyMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualReplyTurnId)
 	assert.NoError(t, err)
-	assert.NotNil(t, replyMessageId)
-	assert.Equal(t, "Hi! I am Jane.", reply)
-	assert.Equal(t, "Jane", replyerName)
+	assert.Equal(t, actualReplyMessage.Visibility, string(VisibilityChannel))
+	actualReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
+	err = json.Unmarshal(actualReplyMessage.OpenaiMessage, &actualReplyOpenAiMessage)
+	actualContent := actualReplyOpenAiMessage.OfUser.Content.OfString.Value
+	assert.Equal(t, "Hi! I am Jane.", actualContent)
 
 	verifyRequestStub, err := wiremockClient.Verify(requestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -95,7 +119,7 @@ func Test_Agent_should_call_llm_in_stream_mode(t *testing.T) {
 
 }
 
-func Test_Agent_should_call_llm_in_stream_moode_for_the_followup_conversation(t *testing.T) {
+func Test_Agent_should_call_llm_for_the_followup_conversation_when_thinking(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -108,11 +132,11 @@ func Test_Agent_should_call_llm_in_stream_moode_for_the_followup_conversation(t 
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "aganet_should_call_llm_in_stream_mode_for_the_followup_conversation.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_for_the_followup_conversation_when_thinking.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForCallLLMTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -121,23 +145,44 @@ func Test_Agent_should_call_llm_in_stream_moode_for_the_followup_conversation(t 
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello Jane!", "name": "Jim"}
+				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0,
-  			"stream": true
+			"temperature": 1.0
 		}`
 
-	firstResponseChunk1 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi! "},"finish_reason":null}]}`
-	firstResponseChunk2 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"content":"I am Jane."},"finish_reason":null}]}`
-	firstResponseChunk3 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
-	firstResponseChunk4 :=
-		`[DONE]`
-
-	firstResponseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\ndata: %s\n\n", firstResponseChunk1, firstResponseChunk2, firstResponseChunk3, firstResponseChunk4)
+	firstResponseBodyJson :=
+		`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-5",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "Hi! I am Jane.",
+						"tool_calls": null,
+						"function_call": { "name": "", "arguments": "" },
+						"refusal": "",
+						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
+						"annotations": null
+					},
+					"finish_reason": "stop",
+					"logprobs": { "content": null, "refusal": null }
+				}
+			],
+			"usage": {
+				"prompt_tokens": 15,
+				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"completion_tokens": 30,
+				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"total_tokens": 45
+			},
+			"system_fingerprint": "",
+			"service_tier": ""
+		}`
 
 	firstRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
@@ -147,47 +192,71 @@ func Test_Agent_should_call_llm_in_stream_moode_for_the_followup_conversation(t 
 		WillReturnResponse(
 			wiremock.NewResponse().
 				WithStatus(http.StatusOK).
-				WithHeader("Content-Type", "text/event-stream").
-				WithHeader("Cache-Control", "no-cache").
-				WithHeader("Connection", "keep-alive").
-				WithBody(firstResponseBodySse),
+				WithHeader("Content-Type", "application/json").
+				WithBody(firstResponseBodyJson),
 		).
 		WillSetStateTo("first-message-received")
 
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstMessageId, err := agent.Acknowledge(ctx, "Jim", "lobby", "Hello Jane!", testLogger)
+	firstReply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotNil(t, firstMessageId)
+	assert.Equal(t, 1, len(firstReply.replyTurnIds))
+	actualFirstReplyTurnId := firstReply.replyTurnIds[0]
 
-	firstReplyMessageId, firstReply, firstReplyerName, err := agent.Reply(ctx, firstMessageId, testLogger)
+	actualFirstReplyMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualFirstReplyTurnId)
 	assert.NoError(t, err)
-	assert.NotNil(t, firstReplyMessageId)
-	assert.Equal(t, "Hi! I am Jane.", firstReply)
-	assert.Equal(t, "Jane", firstReplyerName)
+	assert.Equal(t, actualFirstReplyMessage.Visibility, string(VisibilityChannel))
+	actualFirstReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
+	err = json.Unmarshal(actualFirstReplyMessage.OpenaiMessage, &actualFirstReplyOpenAiMessage)
+	actualContent := actualFirstReplyOpenAiMessage.OfUser.Content.OfString.Value
+	assert.Equal(t, "Hi! I am Jane.", actualContent)
 
 	secondRequestBodyJson :=
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello Jane!", "name": "Jim"},
+				{"role": "user", "content": "Jane! Hello!", "name": "Jim"},
 				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "How are you?", "name": "Jim"}
+				{"role": "user", "content": "Jane! How are you?", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0,
-  			"stream": true
+			"temperature": 1.0
 		}`
 
-	secondResponseChunk1 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":"I'm fine, thank you!"},"finish_reason":null}]}`
-	secondResponseChunk2 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
-	secondResponseChunk3 :=
-		`[DONE]`
-
-	secondResponseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\n", secondResponseChunk1, secondResponseChunk2, secondResponseChunk3)
+	secondResponseBodyJson :=
+		`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-5",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "I'm fine, thank you!",
+						"tool_calls": null,
+						"function_call": { "name": "", "arguments": "" },
+						"refusal": "",
+						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
+						"annotations": null
+					},
+					"finish_reason": "stop",
+					"logprobs": { "content": null, "refusal": null }
+				}
+			],
+			"usage": {
+				"prompt_tokens": 15,
+				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"completion_tokens": 30,
+				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"total_tokens": 45
+			},
+			"system_fingerprint": "",
+			"service_tier": ""
+		}`
 
 	secondRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
@@ -197,25 +266,27 @@ func Test_Agent_should_call_llm_in_stream_moode_for_the_followup_conversation(t 
 		WillReturnResponse(
 			wiremock.NewResponse().
 				WithStatus(http.StatusOK).
-				WithHeader("Content-Type", "text/event-stream").
-				WithHeader("Cache-Control", "no-cache").
-				WithHeader("Connection", "keep-alive").
-				WithBody(secondResponseBodySse),
+				WithHeader("Content-Type", "application/json").
+				WithBody(secondResponseBodyJson),
 		).
 		WillSetStateTo("second-message-received")
 
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondMessageId, err := agent.Acknowledge(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondReply, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.NotNil(t, secondMessageId)
+	assert.NotNil(t, secondReply)
+	assert.Equal(t, 1, len(secondReply.replyTurnIds))
+	actualSecondReplyTurnId := secondReply.replyTurnIds[0]
 
-	secondReplyMessageId, secondReply, secondReplyerName, err := agent.Reply(ctx, secondMessageId, testLogger)
+	actualSecondReplyMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualSecondReplyTurnId)
 	assert.NoError(t, err)
-	assert.NotNil(t, secondReplyMessageId)
-	assert.Equal(t, "I'm fine, thank you!", secondReply)
-	assert.Equal(t, "Jane", secondReplyerName)
+	assert.Equal(t, actualSecondReplyMessage.Visibility, string(VisibilityChannel))
+	actualSecondReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
+	err = json.Unmarshal(actualSecondReplyMessage.OpenaiMessage, &actualSecondReplyOpenAiMessage)
+	actualContent = actualSecondReplyOpenAiMessage.OfUser.Content.OfString.Value
+	assert.Equal(t, "I'm fine, thank you!", actualContent)
 
 	verifyFirstRequestStub, err := wiremockClient.Verify(firstRequestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -227,7 +298,7 @@ func Test_Agent_should_call_llm_in_stream_moode_for_the_followup_conversation(t 
 
 }
 
-func Test_Agent_should_persist_the_conversation_history_for_the_first_message_in_stream_mode(t *testing.T) {
+func Test_Agent_should_persist_the_conversation_history_for_the_first_message_when_thinking(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -240,11 +311,11 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_in
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "aganet_should_persist_the_conversation_history_for_the_first_message_in_stream_mode.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_first_message_when_thinking.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForCallLLMTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -253,23 +324,44 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_in
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello Jane!", "name": "Jim"}
+				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0,
-  			"stream": true
+			"temperature": 1.0
 		}`
 
-	responseChunk1 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi! "},"finish_reason":null}]}`
-	responseChunk2 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"content":"I am Jane."},"finish_reason":null}]}`
-	responseChunk3 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
-	responseChunk4 :=
-		`[DONE]`
-
-	responseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\ndata: %s\n\n", responseChunk1, responseChunk2, responseChunk3, responseChunk4)
+	responseBodyJson :=
+		`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-5",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "Hi! I am Jane.",
+						"tool_calls": null,
+						"function_call": { "name": "", "arguments": "" },
+						"refusal": "",
+						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
+						"annotations": null
+					},
+					"finish_reason": "stop",
+					"logprobs": { "content": null, "refusal": null }
+				}
+			],
+			"usage": {
+				"prompt_tokens": 15,
+				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"completion_tokens": 30,
+				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"total_tokens": 45
+			},
+			"system_fingerprint": "",
+			"service_tier": ""
+		}`
 
 	requestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
@@ -279,85 +371,58 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_in
 		WillReturnResponse(
 			wiremock.NewResponse().
 				WithStatus(http.StatusOK).
-				WithHeader("Content-Type", "text/event-stream").
-				WithHeader("Cache-Control", "no-cache").
-				WithHeader("Connection", "keep-alive").
-				WithBody(responseBodySse),
+				WithHeader("Content-Type", "application/json").
+				WithBody(responseBodyJson),
 		).
 		WillSetStateTo("first-message-received")
 
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	messageId, err := agent.Acknowledge(ctx, "Jim", "lobby", "Hello Jane!", testLogger)
+	reply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotNil(t, messageId)
-
-	replyMessageId, reply, replyerName, err := agent.Reply(ctx, messageId, testLogger)
-	assert.NoError(t, err)
-	assert.NotNil(t, replyMessageId)
-	assert.Equal(t, "Hi! I am Jane.", reply)
-	assert.Equal(t, "Jane", replyerName)
+	assert.NotNil(t, reply)
+	assert.Equal(t, 1, len(reply.replyTurnIds))
 
 	allTurns, err := teamDb.Queries.GetTurns(ctx)
 	assert.NoError(t, err)
 
-	actualUserThoughtTurn := allTurns[0]
-	assert.Equal(t, actualUserThoughtTurn.Kind, string(EventKindThought))
-	assert.Equal(t, actualUserThoughtTurn.Status, string(TurnStatusCompleted))
+	actualTurn1 := allTurns[0]
+	assert.Equal(t, actualTurn1.Kind, string(EventKindAddressing))
 
-	actualUserThoughtMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualUserThoughtTurn.ID)
+	actualTurn2 := allTurns[1]
+	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
+	actualMessage1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn2.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualUserThoughtMessage.Visibility, string(VisibilityHidden))
-	actualUserThoughtMessageJson, err := json.Marshal(actualUserThoughtMessage.OpenaiMessage)
+	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
+	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedUserThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"Hello Jane!\"}","name":"articulate_to_agent"},"type":"function"}],"role":"assistant"}`, messageId)
-	assert.JSONEq(t, expectedUserThoughtMessageJson, string(actualUserThoughtMessageJson))
+	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
+	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
-	actualUserArticulationTurn := allTurns[1]
-	assert.Equal(t, actualUserArticulationTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualUserArticulationTurn.Kind, string(EventKindArticulation))
-	actualUserArticulationMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualUserArticulationTurn.ID)
+	actualTurn3 := allTurns[2]
+	assert.Equal(t, actualTurn3.Kind, string(EventKindPlanning))
+	actualLlmResponse1, err := teamDb.Queries.GetLlmResponseByTurn(ctx, actualTurn3.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualUserArticulationMessage.Visibility, string(VisibilityChannel))
-	actualUserArticulationMessageJson, err := json.Marshal(actualUserArticulationMessage.OpenaiMessage)
+	actualLlmResponse1Json, err := json.Marshal(actualLlmResponse1.OpenaiResponse)
 	assert.NoError(t, err)
-	expectedUserArticulationMessageJson := `{"name":"Jim","content":"Hello Jane!","role":"user"}`
-	assert.JSONEq(t, expectedUserArticulationMessageJson, string(actualUserArticulationMessageJson))
+	assert.JSONEq(t, responseBodyJson, string(actualLlmResponse1Json))
 
-	actualAgentThinkingTurn := allTurns[2]
-	assert.Equal(t, actualAgentThinkingTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualAgentThinkingTurn.Kind, string(EventKindThinking))
-
-	actualAgentThinkingLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByTurn(ctx, actualAgentThinkingTurn.ID)
+	actualTurn4 := allTurns[3]
+	assert.Equal(t, actualTurn4.Kind, string(EventKindReplying))
+	actualReplying1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn4.ID)
 	assert.NoError(t, err)
-	assert.Len(t, actualAgentThinkingLlmChunkRecords, 3)
-	actualAgentThinkingLlmChunk1Json, err := json.Marshal(actualAgentThinkingLlmChunkRecords[0].OpenaiChunkResponse)
+	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
+	actualReplying1Json, err := json.Marshal(actualReplying1.OpenaiMessage)
 	assert.NoError(t, err)
-	assert.JSONEq(t, responseChunk1, string(actualAgentThinkingLlmChunk1Json))
-	actualAgentThinkingLlmChunk2Json, err := json.Marshal(actualAgentThinkingLlmChunkRecords[1].OpenaiChunkResponse)
-	assert.NoError(t, err)
-	assert.JSONEq(t, responseChunk2, string(actualAgentThinkingLlmChunk2Json))
-	actualAgentThinkingLlmChunk3Json, err := json.Marshal(actualAgentThinkingLlmChunkRecords[2].OpenaiChunkResponse)
-	assert.NoError(t, err)
-	assert.JSONEq(t, responseChunk3, string(actualAgentThinkingLlmChunk3Json))
-
-	actualAgentThoughtTurn := allTurns[3]
-	assert.Equal(t, actualAgentThoughtTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualAgentThoughtTurn.Kind, string(EventKindThought))
-	actualAgentThoughtMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualAgentThoughtTurn.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualAgentThoughtMessage.Visibility, string(VisibilityChannel))
-	actualAgentThoughtMessageJson, err := json.Marshal(actualAgentThoughtMessage.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedAgentThoughtMessageJson := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
-	assert.JSONEq(t, expectedAgentThoughtMessageJson, string(actualAgentThoughtMessageJson))
+	expectedReplying1Json := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
+	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
 
 	assert.Len(t, allTurns, 4)
 
 }
 
-func Test_Agent_should_persist_the_conversation_history_for_the_followup_conversation_in_stream_mode(t *testing.T) {
+func Test_Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_thinking(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -370,11 +435,11 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "aganet_should_persist_the_conversation_history_for_the_followup_conversation_in_stream_mode.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_thinking.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForCallLLMTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -383,23 +448,44 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello Jane!", "name": "Jim"}
+				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0,
-  			"stream": true
+			"temperature": 1.0
 		}`
 
-	firstResponseChunk1 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi! "},"finish_reason":null}]}`
-	firstResponseChunk2 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"content":"I am Jane."},"finish_reason":null}]}`
-	firstResponseChunk3 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
-	firstResponseChunk4 :=
-		`[DONE]`
-
-	firstResponseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\ndata: %s\n\n", firstResponseChunk1, firstResponseChunk2, firstResponseChunk3, firstResponseChunk4)
+	firstResponseBodyJson :=
+		`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-5",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "Hi! I am Jane.",
+						"tool_calls": null,
+						"function_call": { "name": "", "arguments": "" },
+						"refusal": "",
+						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
+						"annotations": null
+					},
+					"finish_reason": "stop",
+					"logprobs": { "content": null, "refusal": null }
+				}
+			],
+			"usage": {
+				"prompt_tokens": 15,
+				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"completion_tokens": 30,
+				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"total_tokens": 45
+			},
+			"system_fingerprint": "",
+			"service_tier": ""
+		}`
 
 	firstRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
@@ -409,47 +495,61 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 		WillReturnResponse(
 			wiremock.NewResponse().
 				WithStatus(http.StatusOK).
-				WithHeader("Content-Type", "text/event-stream").
-				WithHeader("Cache-Control", "no-cache").
-				WithHeader("Connection", "keep-alive").
-				WithBody(firstResponseBodySse),
+				WithHeader("Content-Type", "application/json").
+				WithBody(firstResponseBodyJson),
 		).
 		WillSetStateTo("first-message-received")
 
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstMessageId, err := agent.Acknowledge(ctx, "Jim", "lobby", "Hello Jane!", testLogger)
+	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotNil(t, firstMessageId)
-
-	firstReplyMessageId, firstReply, firstReplyerName, err := agent.Reply(ctx, firstMessageId, testLogger)
-	assert.NoError(t, err)
-	assert.NotNil(t, firstReplyMessageId)
-	assert.Equal(t, "Hi! I am Jane.", firstReply)
-	assert.Equal(t, "Jane", firstReplyerName)
 
 	secondRequestBodyJson :=
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello Jane!", "name": "Jim"},
+				{"role": "user", "content": "Jane! Hello!", "name": "Jim"},
 				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "How are you?", "name": "Jim"}
+				{"role": "user", "content": "Jane! How are you?", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0,
-  			"stream": true
+			"temperature": 1.0
 		}`
 
-	secondResponseChunk1 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":"I'm fine, thank you!"},"finish_reason":null}]}`
-	secondResponseChunk2 :=
-		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
-	secondResponseChunk3 :=
-		`[DONE]`
-
-	secondResponseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\n", secondResponseChunk1, secondResponseChunk2, secondResponseChunk3)
+	secondResponseBodyJson :=
+		`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-5",
+			"choices": [
+				{
+					"index": 0,
+					"message": {
+						"role": "assistant",
+						"content": "I'm fine, thank you!",
+						"tool_calls": null,
+						"function_call": { "name": "", "arguments": "" },
+						"refusal": "",
+						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
+						"annotations": null
+					},
+					"finish_reason": "stop",
+					"logprobs": { "content": null, "refusal": null }
+				}
+			],
+			"usage": {
+				"prompt_tokens": 15,
+				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"completion_tokens": 30,
+				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"total_tokens": 45
+			},
+			"system_fingerprint": "",
+			"service_tier": ""
+		}`
 
 	secondRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
@@ -459,125 +559,81 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 		WillReturnResponse(
 			wiremock.NewResponse().
 				WithStatus(http.StatusOK).
-				WithHeader("Content-Type", "text/event-stream").
-				WithHeader("Cache-Control", "no-cache").
-				WithHeader("Connection", "keep-alive").
-				WithBody(secondResponseBodySse),
+				WithHeader("Content-Type", "application/json").
+				WithBody(secondResponseBodyJson),
 		).
 		WillSetStateTo("second-message-received")
 
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondMessageId, err := agent.Acknowledge(ctx, "Jim", "lobby", "How are you?", testLogger)
+	_, err = agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.NotNil(t, secondMessageId)
-
-	secondReplyMessageId, secondReply, secondReplyerName, err := agent.Reply(ctx, secondMessageId, testLogger)
-	assert.NoError(t, err)
-	assert.NotNil(t, secondReplyMessageId)
-	assert.Equal(t, "I'm fine, thank you!", secondReply)
-	assert.Equal(t, "Jane", secondReplyerName)
 
 	allTurns, err := teamDb.Queries.GetTurns(ctx)
 	assert.NoError(t, err)
 
-	actualUserFirstThoughtTurn := allTurns[0]
-	assert.Equal(t, actualUserFirstThoughtTurn.Kind, string(EventKindThought))
-	assert.Equal(t, actualUserFirstThoughtTurn.Status, string(TurnStatusCompleted))
+	actualTurn1 := allTurns[0]
+	assert.Equal(t, actualTurn1.Kind, string(EventKindAddressing))
 
-	actualUserFirstThoughtMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualUserFirstThoughtTurn.ID)
+	actualTurn2 := allTurns[1]
+	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
+	actualMessage1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn2.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualUserFirstThoughtMessage.Visibility, string(VisibilityHidden))
-	actualUserFirstThoughtMessageJson, err := json.Marshal(actualUserFirstThoughtMessage.OpenaiMessage)
+	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
+	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedUserFirstThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"Hello Jane!\"}","name":"articulate_to_agent"},"type":"function"}],"role":"assistant"}`, firstMessageId)
-	assert.JSONEq(t, expectedUserFirstThoughtMessageJson, string(actualUserFirstThoughtMessageJson))
+	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
+	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
-	actualUserFirstArticulationTurn := allTurns[1]
-	assert.Equal(t, actualUserFirstArticulationTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualUserFirstArticulationTurn.Kind, string(EventKindArticulation))
-	actualUserFirstArticulationMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualUserFirstArticulationTurn.ID)
+	actualTurn3 := allTurns[2]
+	assert.Equal(t, actualTurn3.Kind, string(EventKindPlanning))
+	actualLlmResponse1, err := teamDb.Queries.GetLlmResponseByTurn(ctx, actualTurn3.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualUserFirstArticulationMessage.Visibility, string(VisibilityChannel))
-	actualUserFirstArticulationMessageJson, err := json.Marshal(actualUserFirstArticulationMessage.OpenaiMessage)
+	actualLlmResponse1Json, err := json.Marshal(actualLlmResponse1.OpenaiResponse)
 	assert.NoError(t, err)
-	expectedUserFirstArticulationMessageJson := `{"name":"Jim","content":"Hello Jane!","role":"user"}`
-	assert.JSONEq(t, expectedUserFirstArticulationMessageJson, string(actualUserFirstArticulationMessageJson))
+	assert.JSONEq(t, firstResponseBodyJson, string(actualLlmResponse1Json))
 
-	actualAgentFirstThinkingTurn := allTurns[2]
-	assert.Equal(t, actualAgentFirstThinkingTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualAgentFirstThinkingTurn.Kind, string(EventKindThinking))
-	actualAgentFirstThinkingLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByTurn(ctx, actualAgentFirstThinkingTurn.ID)
+	actualTurn4 := allTurns[3]
+	assert.Equal(t, actualTurn4.Kind, string(EventKindReplying))
+	actualReplying1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn4.ID)
 	assert.NoError(t, err)
-	assert.Len(t, actualAgentFirstThinkingLlmChunkRecords, 3)
-	actualAgentFirstThinkingLlmChunk1Json, err := json.Marshal(actualAgentFirstThinkingLlmChunkRecords[0].OpenaiChunkResponse)
+	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
+	actualReplying1Json, err := json.Marshal(actualReplying1.OpenaiMessage)
 	assert.NoError(t, err)
-	assert.JSONEq(t, firstResponseChunk1, string(actualAgentFirstThinkingLlmChunk1Json))
-	actualAgentFirstThinkingLlmChunk2Json, err := json.Marshal(actualAgentFirstThinkingLlmChunkRecords[1].OpenaiChunkResponse)
-	assert.NoError(t, err)
-	assert.JSONEq(t, firstResponseChunk2, string(actualAgentFirstThinkingLlmChunk2Json))
-	actualAgentFirstThinkingLlmChunk3Json, err := json.Marshal(actualAgentFirstThinkingLlmChunkRecords[2].OpenaiChunkResponse)
-	assert.NoError(t, err)
-	assert.JSONEq(t, firstResponseChunk3, string(actualAgentFirstThinkingLlmChunk3Json))
+	expectedReplying1Json := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
+	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
 
-	actualAgentFirstThoughtTurn := allTurns[3]
-	assert.Equal(t, actualAgentFirstThoughtTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualAgentFirstThoughtTurn.Kind, string(EventKindThought))
-	actualAgentFirstThoughtMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualAgentFirstThoughtTurn.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualAgentFirstThoughtMessage.Visibility, string(VisibilityChannel))
-	actualAgentFirstThoughtMessageJson, err := json.Marshal(actualAgentFirstThoughtMessage.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedAgentFirstThoughtMessageJson := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
-	assert.JSONEq(t, expectedAgentFirstThoughtMessageJson, string(actualAgentFirstThoughtMessageJson))
+	actualTurn5 := allTurns[4]
+	assert.Equal(t, actualTurn5.Kind, string(EventKindAddressing))
 
-	actualUserSecondThoughtTurn := allTurns[4]
-	assert.Equal(t, actualUserSecondThoughtTurn.Kind, string(EventKindThought))
-	assert.Equal(t, actualUserSecondThoughtTurn.Status, string(TurnStatusCompleted))
+	actualTurn6 := allTurns[5]
+	assert.Equal(t, actualTurn6.Kind, string(EventKindThinking))
+	actualMessage2, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn6.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, actualMessage2.Visibility, string(VisibilityChannel))
+	actualMessage2Json, err := json.Marshal(actualMessage2.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedMessage2Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! How are you?","role":"user"}`)
+	assert.JSONEq(t, expectedMessage2Json, string(actualMessage2Json))
 
-	actualUserSecondThoughtMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualUserSecondThoughtTurn.ID)
+	actualTurn7 := allTurns[6]
+	assert.Equal(t, actualTurn7.Kind, string(EventKindPlanning))
+	actualLlmResponse2, err := teamDb.Queries.GetLlmResponseByTurn(ctx, actualTurn7.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualUserSecondThoughtMessage.Visibility, string(VisibilityHidden))
-	actualUserSecondThoughtMessageJson, err := json.Marshal(actualUserSecondThoughtMessage.OpenaiMessage)
+	actualLlmResponse2Json, err := json.Marshal(actualLlmResponse2.OpenaiResponse)
 	assert.NoError(t, err)
-	expectedUserSecondThoughtMessageJson := fmt.Sprintf(`{"name":"Jim","tool_calls":[{"id":"%s","function":{"arguments":"{\"agent_name\":\"Jane\",\"message\":\"How are you?\"}","name":"articulate_to_agent"},"type":"function"}],"role":"assistant"}`, secondMessageId)
-	assert.JSONEq(t, expectedUserSecondThoughtMessageJson, string(actualUserSecondThoughtMessageJson))
+	assert.JSONEq(t, secondResponseBodyJson, string(actualLlmResponse2Json))
 
-	actualUserSecondArticulationTurn := allTurns[5]
-	assert.Equal(t, actualUserFirstArticulationTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualUserSecondArticulationTurn.Kind, string(EventKindArticulation))
-	actualUserSecondArticulationMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualUserSecondArticulationTurn.ID)
+	actualTurn8 := allTurns[7]
+	assert.Equal(t, actualTurn8.Kind, string(EventKindReplying))
+	actualReplying2, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn8.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualUserSecondArticulationMessage.Visibility, string(VisibilityChannel))
-	actualUserSecondArticulationMessageJson, err := json.Marshal(actualUserSecondArticulationMessage.OpenaiMessage)
+	assert.Equal(t, actualReplying2.Visibility, string(VisibilityChannel))
+	actualReplying2Json, err := json.Marshal(actualReplying2.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedUserSecondArticulationMessageJson := `{"name":"Jim","content":"How are you?","role":"user"}`
-	assert.JSONEq(t, expectedUserSecondArticulationMessageJson, string(actualUserSecondArticulationMessageJson))
-
-	actualAgentSecondThinkingTurn := allTurns[6]
-	assert.Equal(t, actualAgentFirstThinkingTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualAgentSecondThinkingTurn.Kind, string(EventKindThinking))
-	actualAgentSecondThinkingLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByTurn(ctx, actualAgentSecondThinkingTurn.ID)
-	assert.NoError(t, err)
-	assert.Len(t, actualAgentSecondThinkingLlmChunkRecords, 2)
-	actualAgentSecondThinkingLlmChunk1Json, err := json.Marshal(actualAgentSecondThinkingLlmChunkRecords[0].OpenaiChunkResponse)
-	assert.NoError(t, err)
-	assert.JSONEq(t, secondResponseChunk1, string(actualAgentSecondThinkingLlmChunk1Json))
-	actualAgentSecondThinkingLlmChunk2Json, err := json.Marshal(actualAgentSecondThinkingLlmChunkRecords[1].OpenaiChunkResponse)
-	assert.NoError(t, err)
-	assert.JSONEq(t, secondResponseChunk2, string(actualAgentSecondThinkingLlmChunk2Json))
-
-	actualAgentSecondThoughtTurn := allTurns[7]
-	assert.Equal(t, actualAgentSecondThoughtTurn.Status, string(TurnStatusCompleted))
-	assert.Equal(t, actualAgentSecondThoughtTurn.Kind, string(EventKindThought))
-	actualAgentSecondThoughtMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualAgentSecondThoughtTurn.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualAgentSecondThoughtMessage.Visibility, string(VisibilityChannel))
-	actualAgentSecondThoughtMessageJson, err := json.Marshal(actualAgentSecondThoughtMessage.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedAgentSecondThoughtMessageJson := `{"name":"Jane","content":"I'm fine, thank you!","role":"user"}`
-	assert.JSONEq(t, expectedAgentSecondThoughtMessageJson, string(actualAgentSecondThoughtMessageJson))
+	expectedReplying2Json := `{"name":"Jane","content":"I'm fine, thank you!","role":"user"}`
+	assert.JSONEq(t, expectedReplying2Json, string(actualReplying2Json))
 
 	assert.Len(t, allTurns, 8)
 
@@ -3249,7 +3305,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 // 	assert.Len(t, lastNCommandsFromQueue, 1)
 // }
 
-func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (err error) {
+func makeTeamForCallLLMTest(ctx context.Context, teamDb *TeamDb) (err error) {
 	q := teamDb.Queries
 
 	jane, err := q.CreateMember(ctx, entities.CreateMemberParams{
@@ -3322,7 +3378,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		RoleID:      janeLobbyRole.ID,
 		Instruction: "You are a first impression in the lobby.",
 		Model:       "gpt-5",
-		StreamMode:  true,
+		StreamMode:  false,
 	})
 	if err != nil {
 		testLogger.Error("failed to create duty", zap.Error(err))
@@ -3335,7 +3391,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		PrevID:      sql.NullString{String: janeLobbyFirstImpression.ID, Valid: true},
 		Instruction: "You are a decision maker in the lobby.",
 		Model:       "gpt-5",
-		StreamMode:  true,
+		StreamMode:  false,
 	})
 	if err != nil {
 		testLogger.Error("failed to create duty", zap.Error(err))
@@ -3348,7 +3404,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		PrevID:      sql.NullString{String: janeLobbyDecisionMake.ID, Valid: true},
 		Instruction: "You are a coordinator in the war room.",
 		Model:       "gpt-5",
-		StreamMode:  true,
+		StreamMode:  false,
 	})
 	if err != nil {
 		testLogger.Error("failed to create duty", zap.Error(err))
@@ -3370,7 +3426,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		RoleID:      johnWarRoomRole.ID,
 		Instruction: "You are a expert in the war room.",
 		Model:       "gpt-5",
-		StreamMode:  true,
+		StreamMode:  false,
 	})
 	if err != nil {
 		testLogger.Error("failed to create duty", zap.Error(err))
@@ -3392,7 +3448,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		RoleID:      jimLobbyRole.ID,
 		Instruction: "You are the user.",
 		Model:       "gpt-5",
-		StreamMode:  true,
+		StreamMode:  false,
 	})
 	if err != nil {
 		testLogger.Error("failed to create duty", zap.Error(err))

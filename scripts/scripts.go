@@ -4,5 +4,5 @@
 package scripts
 
 import (
-	_ "github.com/sqlc-dev/sqlc"
+	_ "github.com/sqlc-dev/sqlc/cmd/sqlc"
 )

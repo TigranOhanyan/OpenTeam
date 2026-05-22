@@ -1,0 +1,61 @@
+package openteam
+
+import (
+	"context"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/openteam/entities"
+	"go.uber.org/zap"
+)
+
+func (a *Agent) replyt(
+	ctx context.Context,
+	currentTurnId string,
+	logger *zap.Logger,
+) (
+	nextTurnId string,
+	err error,
+) {
+
+	logger = logger.With(zap.String("currentTurnId", currentTurnId))
+	logger.Info("getting current turn...")
+	currentTurnRecord, err := a.ConversationHistoryDb.Queries.GetTurn(ctx, currentTurnId)
+	logger = logger.With(zap.String("currentTurnId", currentTurnRecord.ID))
+
+	addressingTurn := currentTurnRecord
+
+	for EventKind(addressingTurn.Kind) != EventKindAddressing {
+		addressingTurn, err = a.ConversationHistoryDb.Queries.GetPreviousTurn(ctx, addressingTurn.ID)
+		if err != nil {
+			logger.Error("failed to get previous turn", zap.Error(err))
+			return
+		}
+	}
+
+	logger = logger.With(zap.String("initiatingAddressingTurnId", addressingTurn.ID))
+
+	logger.Info("getting duty of current turn...")
+	dutyOfAddressingTurn, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, currentTurnRecord.ID)
+	if err != nil {
+		logger.Error("failed to get duty", zap.Error(err))
+		return
+	}
+	logger = logger.With(zap.String("dutyId", dutyOfAddressingTurn.ID))
+
+	turnParams := entities.CreateTurnParams{
+		ID:     ulid.Make().String(),
+		DutyID: dutyOfAddressingTurn.ID,
+		Kind:   string(EventKindThinking),
+		Status: string(TurnStatusPending),
+	}
+	nextTurnRecord, err := a.ConversationHistoryDb.Queries.CreateTurn(ctx, turnParams)
+	if err != nil {
+		logger.Error("failed to create current turn", zap.Error(err))
+		return
+	}
+
+	nextTurnId = nextTurnRecord.ID
+
+	return
+
+}
