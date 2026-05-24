@@ -123,7 +123,7 @@ func (a *Agent) act(
 
 		setName(&llmResponseAsMessage, mention.toMemberName)
 
-		stepIntoUserMessage(&llmResponseAsMessage)
+		turnIntoUserMessage(&llmResponseAsMessage)
 
 		filteredLlmResponseAsMessage := filterControlToolCalls(llmResponseAsMessage)
 
@@ -375,7 +375,7 @@ func setName(
 	}
 }
 
-func stepIntoUserMessage(
+func turnIntoUserMessage(
 	message *openai.ChatCompletionMessageParamUnion,
 ) {
 

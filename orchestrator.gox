@@ -203,7 +203,7 @@ func (fanOut StepTransferPlan) transferFanOut(
 
 		setName(&llmResponseAsMessage, memberRecord.Name)
 
-		stepIntoUserMessage(&llmResponseAsMessage)
+		turnIntoUserMessage(&llmResponseAsMessage)
 
 		filteredLlmResponseAsMessage := filterControlToolCalls(llmResponseAsMessage)
 

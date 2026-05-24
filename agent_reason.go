@@ -23,32 +23,6 @@ func (a *Agent) reason(
 ) {
 	logger = logger.With(zap.String("stepId", stepRecord.ID))
 
-	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
-	if err != nil {
-		logger.Error("failed to begin transaction", zap.Error(err))
-		return
-	}
-
-	defer func() {
-		if err != nil {
-			trx.Rollback()
-		}
-	}()
-
-	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
-
-	reasoningStepRecord, err := createStep(ctx, qtx, EventKindReasoning, logger)
-	if err != nil {
-		logger.Error("failed to create reasoning step", zap.Error(err))
-		return
-	}
-
-	err = linkSteps(ctx, qtx, stepRecord.ID, reasoningStepRecord.ID, logger)
-	if err != nil {
-		logger.Error("failed to link steps", zap.Error(err))
-		return
-	}
-
 	logger = logger.With(zap.String("channelId", mention.channelName))
 	logger.Info("getting messages...")
 
@@ -57,7 +31,7 @@ func (a *Agent) reason(
 		RoleID:      mention.toRoleID,
 		ChannelName: mention.channelName,
 	}
-	messageRecords, err := qtx.GetContextMessages(ctx, getContextMessagesParams)
+	messageRecords, err := a.ConversationHistoryDb.Queries.GetContextMessages(ctx, getContextMessagesParams)
 	if err != nil {
 		logger.Error("failed to get messages", zap.Error(err))
 		return
@@ -75,7 +49,7 @@ func (a *Agent) reason(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		stepIntoAssistantMessage(&openAiMessage, mention.toMemberName)
+		turnIntoAssistantMessage(&openAiMessage, mention.toMemberName)
 		openAiMessages[i] = openAiMessage
 	}
 
@@ -87,106 +61,20 @@ func (a *Agent) reason(
 		// ParallelToolCalls: param.NewOpt(ParallelToolCalls),
 	}
 
-	responseId := ulid.Make().String()
-	logger = logger.With(zap.String("responseId", responseId))
+	var reasoningStepRecord entities.Step
 
 	if mention.toTask.StreamMode {
-		logger.Info("calling LLM in stream mode...")
-		// 1. Start the stream
-		stream := a.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
-		defer stream.Close()
-		// 2. Generate a single ID for the entire stream
-		sequenceNumber := 0
-
-		// 3. Iterate over the stream
-		for stream.Next() {
-
-			logger := logger.With(zap.Int("sequenceNumber", sequenceNumber))
-
-			err = stream.Err()
-			if err != nil {
-				logger.Error("stream error", zap.Error(err))
-				return
-			}
-
-			chunk := stream.Current()
-
-			logger.Info("processing chunk")
-
-			// Persist the raw chunk to the database immediately
-			createChunkParams := entities.CreateLlmChunkResponsesParams{
-				ID:                  responseId,
-				SequenceNumber:      int64(sequenceNumber),
-				StepID:              reasoningStepRecord.ID,
-				TaskID:              mention.toTask.ID,
-				OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
-			}
-			err = a.insertChunk(ctx, qtx, createChunkParams, logger)
-			if err != nil {
-				logger.Error("failed to insert chunk", zap.Error(err))
-				return
-			}
-			sequenceNumber++
-		}
-		// 4. Check for stream errors
-		if err = stream.Err(); err != nil {
-			logger.Error("stream error", zap.Error(err))
+		reasoningStepRecord, err = a.reasonInStreamMode(ctx, mention, stepRecord, chatParams, logger)
+		if err != nil {
+			logger.Error("failed to reason in stream mode", zap.Error(err))
 			return
 		}
-
 	} else {
-
-		logger.Info("calling LLM in one shot...")
-
-		maybeLlmResponse, er := a.LlmClient.Chat.Completions.New(ctx, chatParams)
-		err = er
+		reasoningStepRecord, err = a.reasonInOneShotMode(ctx, mention, stepRecord, chatParams, logger)
 		if err != nil {
-			logger.Error("failed to call LLM", zap.Error(err))
+			logger.Error("failed to reason in one shot mode", zap.Error(err))
 			return
 		}
-
-		if maybeLlmResponse == nil {
-			logger.Error("no llm response received")
-			err = fmt.Errorf("no llm response received")
-			return
-		}
-
-		llmResponse := *maybeLlmResponse
-
-		if len(llmResponse.Choices) == 0 {
-			logger.Error("no choices in llm response")
-			err = fmt.Errorf("no choices in llm response")
-			return
-		}
-
-		logger.Info("LLM called successfully")
-
-		llmResponseBytes, er := json.Marshal(llmResponse)
-		err = er
-		if err != nil {
-			logger.Error("failed to marshal llm response", zap.Error(err))
-			return
-		}
-
-		createLlmResponseParams := entities.CreateLlmResponseParams{
-			ID:             responseId,
-			TaskID:         mention.toTask.ID,
-			StepID:         reasoningStepRecord.ID,
-			OpenaiResponse: json.RawMessage(llmResponseBytes),
-		}
-
-		_, err = qtx.CreateLlmResponse(ctx, createLlmResponseParams)
-		if err != nil {
-			logger.Error("failed to create new response", zap.Error(err))
-			return
-		}
-
-	}
-
-	err = trx.Commit()
-	if err != nil {
-		logger.Error("failed to commit transaction", zap.Error(err))
-		return
 	}
 
 	reply, err = a.act(ctx, reasoningStepRecord, mention, logger)
@@ -198,7 +86,195 @@ func (a *Agent) reason(
 	return
 }
 
-func stepIntoAssistantMessage(
+func (a *Agent) reasonInStreamMode(
+	ctx context.Context,
+	mention Mention,
+	mentionStepRecord entities.Step,
+	chatParams openai.ChatCompletionNewParams,
+	logger *zap.Logger,
+) (
+	reasoningStepRecord entities.Step,
+	err error,
+) {
+
+	responseId := ulid.Make().String()
+	logger = logger.With(zap.String("responseId", responseId))
+
+	logger.Info("calling LLM in stream mode...")
+	// 1. Start the stream
+	stream := a.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
+	defer stream.Close()
+
+	// 2. Begin a transaction
+	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+
+	defer func() {
+		if err != nil {
+			trx.Rollback()
+		}
+	}()
+
+	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+
+	// 3. Create a reasoning step
+	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, logger)
+	if err != nil {
+		logger.Error("failed to create reasoning step", zap.Error(err))
+		return
+	}
+
+	// 4. Link the mention step to the reasoning step
+	err = linkSteps(ctx, qtx, mentionStepRecord.ID, reasoningStepRecord.ID, logger)
+	if err != nil {
+		logger.Error("failed to link steps", zap.Error(err))
+		return
+	}
+
+	// 3. Iterate over the stream
+	sequenceNumber := 0
+	for stream.Next() {
+
+		logger := logger.With(zap.Int("sequenceNumber", sequenceNumber))
+
+		err = stream.Err()
+		if err != nil {
+			logger.Error("stream error", zap.Error(err))
+			return
+		}
+
+		chunk := stream.Current()
+
+		logger.Info("processing chunk")
+
+		// Persist the raw chunk to the database immediately
+		createChunkParams := entities.CreateLlmChunkResponsesParams{
+			ID:                  responseId,
+			SequenceNumber:      int64(sequenceNumber),
+			StepID:              reasoningStepRecord.ID,
+			TaskID:              mention.toTask.ID,
+			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
+		}
+		err = a.insertChunk(ctx, qtx, createChunkParams, logger)
+		if err != nil {
+			logger.Error("failed to insert chunk", zap.Error(err))
+			return
+		}
+		sequenceNumber++
+	}
+	// 4. Check for stream errors
+	if err = stream.Err(); err != nil {
+		logger.Error("stream error", zap.Error(err))
+		return
+	}
+
+	err = trx.Commit()
+	if err != nil {
+		logger.Error("failed to commit transaction", zap.Error(err))
+		return
+	}
+
+	return
+
+}
+
+func (a *Agent) reasonInOneShotMode(
+	ctx context.Context,
+	mention Mention,
+	mentionStepRecord entities.Step,
+	chatParams openai.ChatCompletionNewParams,
+	logger *zap.Logger,
+) (
+	reasoningStepRecord entities.Step,
+	err error,
+) {
+
+	responseId := ulid.Make().String()
+	logger = logger.With(zap.String("responseId", responseId))
+	logger.Info("calling LLM in one shot...")
+
+	maybeLlmResponse, er := a.LlmClient.Chat.Completions.New(ctx, chatParams)
+	err = er
+	if err != nil {
+		logger.Error("failed to call LLM", zap.Error(err))
+		return
+	}
+
+	if maybeLlmResponse == nil {
+		logger.Error("no llm response received")
+		err = fmt.Errorf("no llm response received")
+		return
+	}
+
+	llmResponse := *maybeLlmResponse
+
+	if len(llmResponse.Choices) == 0 {
+		logger.Error("no choices in llm response")
+		err = fmt.Errorf("no choices in llm response")
+		return
+	}
+
+	logger.Info("LLM called successfully")
+
+	llmResponseBytes, er := json.Marshal(llmResponse)
+	err = er
+	if err != nil {
+		logger.Error("failed to marshal llm response", zap.Error(err))
+		return
+	}
+
+	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+
+	defer func() {
+		if err != nil {
+			trx.Rollback()
+		}
+	}()
+
+	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+
+	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, logger)
+	if err != nil {
+		logger.Error("failed to create reasoning step", zap.Error(err))
+		return
+	}
+
+	err = linkSteps(ctx, qtx, mentionStepRecord.ID, reasoningStepRecord.ID, logger)
+	if err != nil {
+		logger.Error("failed to link steps", zap.Error(err))
+		return
+	}
+
+	createLlmResponseParams := entities.CreateLlmResponseParams{
+		ID:             responseId,
+		TaskID:         mention.toTask.ID,
+		StepID:         reasoningStepRecord.ID,
+		OpenaiResponse: json.RawMessage(llmResponseBytes),
+	}
+
+	_, err = qtx.CreateLlmResponse(ctx, createLlmResponseParams)
+	if err != nil {
+		logger.Error("failed to create new response", zap.Error(err))
+		return
+	}
+
+	err = trx.Commit()
+	if err != nil {
+		logger.Error("failed to commit transaction", zap.Error(err))
+		return
+	}
+
+	return
+}
+
+func turnIntoAssistantMessage(
 	message *openai.ChatCompletionMessageParamUnion,
 	name string,
 ) {
