@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *Agent) think(
+func (a *Agent) reason(
 	ctx context.Context,
 	stepRecord entities.Step,
 	mention Mention,
@@ -37,13 +37,13 @@ func (a *Agent) think(
 
 	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
 
-	planningStepRecord, err := createStep(ctx, qtx, EventKindPlanning, logger)
+	reasoningStepRecord, err := createStep(ctx, qtx, EventKindReasoning, logger)
 	if err != nil {
-		logger.Error("failed to create planning step", zap.Error(err))
+		logger.Error("failed to create reasoning step", zap.Error(err))
 		return
 	}
 
-	err = linkSteps(ctx, qtx, stepRecord.ID, planningStepRecord.ID, logger)
+	err = linkSteps(ctx, qtx, stepRecord.ID, reasoningStepRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to link steps", zap.Error(err))
 		return
@@ -117,7 +117,7 @@ func (a *Agent) think(
 			createChunkParams := entities.CreateLlmChunkResponsesParams{
 				ID:                  responseId,
 				SequenceNumber:      int64(sequenceNumber),
-				StepID:              planningStepRecord.ID,
+				StepID:              reasoningStepRecord.ID,
 				TaskID:              mention.toTask.ID,
 				OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 			}
@@ -171,7 +171,7 @@ func (a *Agent) think(
 		createLlmResponseParams := entities.CreateLlmResponseParams{
 			ID:             responseId,
 			TaskID:         mention.toTask.ID,
-			StepID:         planningStepRecord.ID,
+			StepID:         reasoningStepRecord.ID,
 			OpenaiResponse: json.RawMessage(llmResponseBytes),
 		}
 
@@ -189,9 +189,9 @@ func (a *Agent) think(
 		return
 	}
 
-	reply, err = a.analyze(ctx, planningStepRecord, mention, logger)
+	reply, err = a.act(ctx, reasoningStepRecord, mention, logger)
 	if err != nil {
-		logger.Error("failed to think", zap.Error(err))
+		logger.Error("failed to act", zap.Error(err))
 		return
 	}
 

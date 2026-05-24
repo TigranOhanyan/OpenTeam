@@ -18,7 +18,7 @@ import (
 	"github.com/wiremock/go-wiremock"
 )
 
-func Test_Agent_should_call_llm_when_thinking_in_stream_mode(t *testing.T) {
+func Test_Agent_should_call_llm_when_reasoning_in_stream_mode(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -31,11 +31,11 @@ func Test_Agent_should_call_llm_when_thinking_in_stream_mode(t *testing.T) {
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_when_thinking.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_when_reasoning.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForReasoningTestInStreamMode(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -100,7 +100,7 @@ func Test_Agent_should_call_llm_when_thinking_in_stream_mode(t *testing.T) {
 
 }
 
-func Test_Agent_should_call_llm_for_the_followup_conversation_when_thinking_in_stream_mode(t *testing.T) {
+func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_stream_mode(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -113,11 +113,11 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_thinking_in_s
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_for_the_followup_conversation_when_thinking.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_for_the_followup_conversation_when_reasoning.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForReasoningTestInStreamMode(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -239,7 +239,7 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_thinking_in_s
 
 }
 
-func Test_Agent_should_persist_the_conversation_history_for_the_first_message_when_thinking_in_stream_mode(t *testing.T) {
+func Test_Agent_should_persist_the_conversation_history_for_the_first_message_when_reasoning_in_stream_mode(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -252,11 +252,11 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_first_message_when_thinking.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_first_message_when_reasoning.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForReasoningTestInStreamMode(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -313,7 +313,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.Equal(t, actualStep1.Kind, string(EventKindMention))
 
 	actualStep2 := allSteps[1]
-	assert.Equal(t, actualStep2.Kind, string(EventKindThinking))
+	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
 	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep2.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
@@ -323,7 +323,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
 	actualStep3 := allSteps[2]
-	assert.Equal(t, actualStep3.Kind, string(EventKindPlanning))
+	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
 	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
@@ -338,7 +338,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.JSONEq(t, responseChunk3, string(actualLlmChunk3Json))
 
 	actualStep4 := allSteps[3]
-	assert.Equal(t, actualStep4.Kind, string(EventKindReplying))
+	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
 	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
@@ -351,7 +351,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 }
 
-func Test_Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_thinking_in_stream_mode(t *testing.T) {
+func Test_Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_reasoning_in_stream_mode(t *testing.T) {
 	var err error
 	defer wiremockClient.Reset()
 	agent := agentProto
@@ -364,11 +364,11 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_thinking.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_reasoning.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLMTestInStreamMode(ctx, teamDb)
+	err = makeTeamForReasoningTestInStreamMode(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -468,7 +468,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.Equal(t, actualStep1.Kind, string(EventKindMention))
 
 	actualStep2 := allSteps[1]
-	assert.Equal(t, actualStep2.Kind, string(EventKindThinking))
+	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
 	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep2.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
@@ -478,7 +478,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
 	actualStep3 := allSteps[2]
-	assert.Equal(t, actualStep3.Kind, string(EventKindPlanning))
+	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
 	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
@@ -493,7 +493,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, firstResponseChunk3, string(actualLlmChunk3Json))
 
 	actualStep4 := allSteps[3]
-	assert.Equal(t, actualStep4.Kind, string(EventKindReplying))
+	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
 	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
@@ -506,7 +506,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.Equal(t, actualStep5.Kind, string(EventKindMention))
 
 	actualStep6 := allSteps[5]
-	assert.Equal(t, actualStep2.Kind, string(EventKindThinking))
+	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
 	actualMessage2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep6.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage2.Visibility, string(VisibilityChannel))
@@ -516,7 +516,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, expectedMessage2Json, string(actualMessage2Json))
 
 	actualStep7 := allSteps[6]
-	assert.Equal(t, actualStep7.Kind, string(EventKindPlanning))
+	assert.Equal(t, actualStep7.Kind, string(EventKindReasoning))
 	actualLlmChunkRecords, err = teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep7.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 2)
@@ -528,7 +528,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, secondResponseChunk2, string(actualLlmChunk2Json))
 
 	actualStep8 := allSteps[7]
-	assert.Equal(t, actualStep4.Kind, string(EventKindReplying))
+	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
 	actualReplying2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep8.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying2.Visibility, string(VisibilityChannel))
@@ -541,7 +541,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 }
 
-func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (err error) {
+func makeTeamForReasoningTestInStreamMode(ctx context.Context, teamDb *TeamDb) (err error) {
 	q := teamDb.Queries
 
 	jane, err := q.CreateMember(ctx, entities.CreateMemberParams{

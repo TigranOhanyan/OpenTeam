@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *Agent) reply(
+func (a *Agent) observe(
 	ctx context.Context,
 	stepID string,
 	logger *zap.Logger,
@@ -45,11 +45,11 @@ func (a *Agent) reply(
 
 	mention, err := reconstituteMention(ctx, qtx, stepRecord, logger)
 	if err != nil {
-		logger.Error("failed to reconstitute replying context", zap.Error(err))
+		logger.Error("failed to reconstitute observing context", zap.Error(err))
 		return
 	}
 
-	thinkingStepRecord, err := mention.persistMentionMessage(ctx, qtx, stepRecord, logger)
+	observingStepRecord, err := mention.persistMentionMessage(ctx, qtx, stepRecord, logger)
 	if err != nil {
 		logger.Error("failed to persist mention message", zap.Error(err))
 		return
@@ -61,9 +61,9 @@ func (a *Agent) reply(
 		return
 	}
 
-	reply, err = a.think(ctx, thinkingStepRecord, mention, logger)
+	reply, err = a.reason(ctx, observingStepRecord, mention, logger)
 	if err != nil {
-		logger.Error("failed to think", zap.Error(err))
+		logger.Error("failed to reason", zap.Error(err))
 		return
 	}
 
@@ -89,17 +89,17 @@ func (a Mention) persistMentionMessage(
 	stepRecord entities.Step,
 	logger *zap.Logger,
 ) (
-	thinkingStepRecord entities.Step,
+	observingStepRecord entities.Step,
 	err error,
 ) {
 
-	thinkingStepRecord, err = createStep(ctx, qtx, EventKindThinking, logger)
+	observingStepRecord, err = createStep(ctx, qtx, EventKindObserving, logger)
 	if err != nil {
-		logger.Error("failed to create thinking step", zap.Error(err))
+		logger.Error("failed to create observing step", zap.Error(err))
 		return
 	}
 
-	err = linkSteps(ctx, qtx, stepRecord.ID, thinkingStepRecord.ID, logger)
+	err = linkSteps(ctx, qtx, stepRecord.ID, observingStepRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to link steps", zap.Error(err))
 		return
@@ -126,7 +126,7 @@ func (a Mention) persistMentionMessage(
 		ID:            ulid.Make().String(),
 		OpenaiMessage: json.RawMessage(openAiMessageBytes),
 		Visibility:    string(VisibilityChannel),
-		StepID:        thinkingStepRecord.ID,
+		StepID:        observingStepRecord.ID,
 		ChannelName:   a.channelName,
 		RoleID:        a.toRoleID,
 		TaskID:        a.toTask.ID,

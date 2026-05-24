@@ -30,7 +30,7 @@ func (o *Plan) isFinalReply() bool {
 	return len(o.mentionStepIds) == 0 && len(o.actingStepIds) == 0
 }
 
-func (a *Agent) analyze(
+func (a *Agent) act(
 	ctx context.Context,
 	stepRecord entities.Step,
 	mention Mention,
@@ -109,13 +109,13 @@ func (a *Agent) analyze(
 	if !orchestrationPlan.isOnlyControl() {
 		logger.Info("persisting message...")
 
-		replyStepRecord, er := createStep(ctx, qtx, EventKindReplying, logger)
+		actingStepRecord, er := createStep(ctx, qtx, EventKindActing, logger)
 		err = er
 		if err != nil {
-			logger.Error("failed to create replying step", zap.Error(err))
+			logger.Error("failed to create acting step", zap.Error(err))
 			return
 		}
-		err = linkSteps(ctx, qtx, stepRecord.ID, replyStepRecord.ID, logger)
+		err = linkSteps(ctx, qtx, stepRecord.ID, actingStepRecord.ID, logger)
 		if err != nil {
 			logger.Error("failed to link steps", zap.Error(err))
 			return
@@ -137,7 +137,7 @@ func (a *Agent) analyze(
 		createMessageParams := entities.CreateMessageParams{
 			ID:            messageId,
 			Visibility:    string(VisibilityChannel),
-			StepID:        replyStepRecord.ID,
+			StepID:        actingStepRecord.ID,
 			ChannelName:   mention.channelName,
 			RoleID:        mention.toRoleID,
 			TaskID:        mention.toTask.ID,
@@ -150,7 +150,7 @@ func (a *Agent) analyze(
 			return
 		}
 
-		reply.replyStepIds = append(reply.replyStepIds, replyStepRecord.ID)
+		reply.replyStepIds = append(reply.replyStepIds, actingStepRecord.ID)
 	}
 
 	err = trx.Commit()
@@ -164,24 +164,24 @@ func (a *Agent) analyze(
 	}
 
 	for _, mentionStepId := range orchestrationPlan.mentionStepIds {
-		mentionReply, er := a.reply(ctx, mentionStepId, logger) // short circuit if the reply requries tool calls
+		mentionReply, er := a.observe(ctx, mentionStepId, logger) // short circuit if the reply requries tool calls
 		err = er
 		if err != nil {
-			logger.Error("failed to reply to mention", zap.Error(err))
+			logger.Error("failed to observe mention", zap.Error(err))
 			return
 		}
 		reply.actionIds = append(reply.actionIds, mentionReply.actionIds...)
 	}
 
-	thinkingStepRecord, err := createStep(ctx, qtx, EventKindThinking, logger)
+	observingStepRecord, err := createStep(ctx, qtx, EventKindObserving, logger)
 
-	err = linkSteps(ctx, qtx, stepRecord.ID, thinkingStepRecord.ID, logger)
+	err = linkSteps(ctx, qtx, stepRecord.ID, observingStepRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to link steps", zap.Error(err))
 		return
 	}
 
-	reply, err = a.think(ctx, thinkingStepRecord, mention, logger)
+	reply, err = a.reason(ctx, observingStepRecord, mention, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return

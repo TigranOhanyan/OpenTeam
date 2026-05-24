@@ -17,12 +17,10 @@ const (
 type EventKind string
 
 const (
-	EventKindMention  EventKind = "mention"
-	EventKindReplying EventKind = "replying"
-	EventKindPlanning EventKind = "planning"
-	EventKindThinking EventKind = "thinking"
-	EventKindActing   EventKind = "acting"
-	EventKindActed    EventKind = "acted"
+	EventKindMention   EventKind = "mention"
+	EventKindObserving EventKind = "observing"
+	EventKindReasoning EventKind = "reasoning"
+	EventKindActing    EventKind = "acting"
 )
 
 type StepStatus string

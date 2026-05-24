@@ -135,10 +135,10 @@ func (a *Agent) Ask(
 	}
 
 	for _, mentionStepId := range orchestrationPlan.mentionStepIds {
-		mentionReply, er := a.reply(ctx, mentionStepId, logger) // short circuit if the reply requries tool calls
+		mentionReply, er := a.observe(ctx, mentionStepId, logger) // short circuit if the reply requries tool calls
 		err = er
 		if err != nil {
-			logger.Error("failed to reply to mention", zap.Error(err))
+			logger.Error("failed to observe mention", zap.Error(err))
 			return
 		}
 		reply.actionIds = append(reply.actionIds, mentionReply.actionIds...)
