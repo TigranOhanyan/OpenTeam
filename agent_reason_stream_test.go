@@ -310,7 +310,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.NoError(t, err)
 
 	actualStep1 := allSteps[0]
-	assert.Equal(t, actualStep1.Kind, string(EventKindMention))
+	assert.Equal(t, actualStep1.Kind, string(EventKindMentioning))
 
 	actualStep2 := allSteps[1]
 	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
@@ -465,7 +465,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.NoError(t, err)
 
 	actualStep1 := allSteps[0]
-	assert.Equal(t, actualStep1.Kind, string(EventKindMention))
+	assert.Equal(t, actualStep1.Kind, string(EventKindMentioning))
 
 	actualStep2 := allSteps[1]
 	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
@@ -503,7 +503,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
 
 	actualStep5 := allSteps[4]
-	assert.Equal(t, actualStep5.Kind, string(EventKindMention))
+	assert.Equal(t, actualStep5.Kind, string(EventKindMentioning))
 
 	actualStep6 := allSteps[5]
 	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))

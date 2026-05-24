@@ -111,7 +111,7 @@ func (a *Agent) insertMention(
 		}
 
 		a.ChangeStream <- ChangeEvent{
-			Kind:        CdcEventKindMention,
+			Kind:        CdcEventKindMentioning,
 			StepID:      params.StepID,
 			ChannelName: channelRecord.Name,
 			Mention: &entities.Mention{

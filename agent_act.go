@@ -217,7 +217,7 @@ func (a *MentionFactory) persistMention(
 		return
 	}
 
-	stepRecord, err := createStep(ctx, a.qtx, EventKindMention, logger)
+	stepRecord, err := createStep(ctx, a.qtx, EventKindMentioning, logger)
 
 	if err != nil {
 		return
@@ -244,7 +244,7 @@ func (a *MentionFactory) persistMention(
 	}
 
 	a.stream <- ChangeEvent{
-		Kind:        CdcEventKindMention,
+		Kind:        CdcEventKindMentioning,
 		StepID:      stepRecord.ID,
 		ChannelName: a.fromMention.channelName,
 		Mention: &entities.Mention{

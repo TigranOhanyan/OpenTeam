@@ -12,9 +12,9 @@ import (
 type CdcEventKind string
 
 const (
-	CdcEventKindAction  CdcEventKind = "action"
-	CdcEventKindChunk   CdcEventKind = "chunk"
-	CdcEventKindMention CdcEventKind = "mention"
+	CdcEventKindAction     CdcEventKind = "action"
+	CdcEventKindChunk      CdcEventKind = "chunk"
+	CdcEventKindMentioning CdcEventKind = "mentioning"
 )
 
 type ChangeEvent struct {
@@ -104,7 +104,7 @@ func (a *Agent) Ask(
 			return
 		}
 
-		mentionStepRecord, er := createStep(ctx, qtx, EventKindMention, logger)
+		mentionStepRecord, er := createStep(ctx, qtx, EventKindMentioning, logger)
 		err = er
 		if err != nil {
 			logger.Error("failed to create mention step", zap.Error(err))
