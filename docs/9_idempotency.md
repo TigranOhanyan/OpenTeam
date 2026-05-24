@@ -14,7 +14,7 @@ Instead of trying to serialize and deserialize the exact line of code where the 
 
 A Checkpoint is the root event that triggers a cascade of agentic work. Most commonly, this is a new message from a user. 
 
-When the OpenTeam engine is invoked, it does not need to be told *where* it left off. It is simply pointed at a Checkpoint and told to resolve it. The engine begins walking down the execution tree (evaluating duties, calling LLMs, parsing thoughts, delegating to sub-agents) starting from that root node.
+When the OpenTeam engine is invoked, it does not need to be told *where* it left off. It is simply pointed at a Checkpoint and told to resolve it. The engine begins walking down the execution tree (evaluating tasks, calling LLMs, parsing thoughts, delegating to sub-agents) starting from that root node.
 
 ## State-Machine Idempotency
 

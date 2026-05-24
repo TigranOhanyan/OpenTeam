@@ -1,2 +1,2 @@
--- name: GetToolsByDuty :many
-SELECT * FROM tools WHERE duty_id = ?;
+-- name: GetToolsByTask :many
+SELECT * FROM tools WHERE task_id = ?;

@@ -11,18 +11,18 @@ type Visibility string
 const (
 	VisibilityChannel Visibility = "channel"
 	VisibilityRole    Visibility = "role"
-	VisibilityDuty    Visibility = "duty"
+	VisibilityTask    Visibility = "task"
 )
 
 type EventKind string
 
 const (
-	EventKindAddressing EventKind = "addressing"
-	EventKindReplying   EventKind = "replying"
-	EventKindPlanning   EventKind = "planning"
-	EventKindThinking   EventKind = "thinking"
-	EventKindActing     EventKind = "acting"
-	EventKindActed      EventKind = "acted"
+	EventKindMention  EventKind = "mention"
+	EventKindReplying EventKind = "replying"
+	EventKindPlanning EventKind = "planning"
+	EventKindThinking EventKind = "thinking"
+	EventKindActing   EventKind = "acting"
+	EventKindActed    EventKind = "acted"
 )
 
 type TurnStatus string

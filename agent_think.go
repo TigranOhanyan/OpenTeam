@@ -15,7 +15,7 @@ import (
 func (a *Agent) think(
 	ctx context.Context,
 	turnRecord entities.Turn,
-	addressing Addressing,
+	mention Mention,
 	logger *zap.Logger,
 ) (
 	reply Reply,
@@ -49,13 +49,13 @@ func (a *Agent) think(
 		return
 	}
 
-	logger = logger.With(zap.String("channelId", addressing.channelName))
+	logger = logger.With(zap.String("channelId", mention.channelName))
 	logger.Info("getting messages...")
 
 	getContextMessagesParams := entities.GetContextMessagesParams{
-		DutyID:      addressing.toDuty.ID,
-		RoleID:      addressing.toRoleID,
-		ChannelName: addressing.channelName,
+		TaskID:      mention.toTask.ID,
+		RoleID:      mention.toRoleID,
+		ChannelName: mention.channelName,
 	}
 	messageRecords, err := qtx.GetContextMessages(ctx, getContextMessagesParams)
 	if err != nil {
@@ -75,12 +75,12 @@ func (a *Agent) think(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		turnIntoAssistantMessage(&openAiMessage, addressing.toMemberName)
+		turnIntoAssistantMessage(&openAiMessage, mention.toMemberName)
 		openAiMessages[i] = openAiMessage
 	}
 
 	chatParams := openai.ChatCompletionNewParams{
-		Model:       addressing.toDuty.Model,
+		Model:       mention.toTask.Model,
 		Messages:    openAiMessages,
 		N:           param.NewOpt(AmountOfChoices),
 		Temperature: param.NewOpt(Temperature),
@@ -90,7 +90,7 @@ func (a *Agent) think(
 	responseId := ulid.Make().String()
 	logger = logger.With(zap.String("responseId", responseId))
 
-	if addressing.toDuty.StreamMode {
+	if mention.toTask.StreamMode {
 		logger.Info("calling LLM in stream mode...")
 		// 1. Start the stream
 		stream := a.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
@@ -118,7 +118,7 @@ func (a *Agent) think(
 				ID:                  responseId,
 				SequenceNumber:      int64(sequenceNumber),
 				TurnID:              planningTurnRecord.ID,
-				DutyID:              addressing.toDuty.ID,
+				TaskID:              mention.toTask.ID,
 				OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 			}
 			err = a.insertChunk(ctx, qtx, createChunkParams, logger)
@@ -170,7 +170,7 @@ func (a *Agent) think(
 
 		createLlmResponseParams := entities.CreateLlmResponseParams{
 			ID:             responseId,
-			DutyID:         addressing.toDuty.ID,
+			TaskID:         mention.toTask.ID,
 			TurnID:         planningTurnRecord.ID,
 			OpenaiResponse: json.RawMessage(llmResponseBytes),
 		}
@@ -189,7 +189,7 @@ func (a *Agent) think(
 		return
 	}
 
-	reply, err = a.analyze(ctx, planningTurnRecord, addressing, logger)
+	reply, err = a.analyze(ctx, planningTurnRecord, mention, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return
@@ -243,6 +243,6 @@ func turnIntoAssistantMessage(
 }
 
 type ReplyOrThinkOver struct {
-	reply         *Reply
-	addressingIds []string
+	reply      *Reply
+	mentionIds []string
 }

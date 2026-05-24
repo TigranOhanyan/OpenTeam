@@ -12,9 +12,9 @@ import (
 type CdcEventKind string
 
 const (
-	CdcEventKindAction     CdcEventKind = "action"
-	CdcEventKindChunk      CdcEventKind = "chunk"
-	CdcEventKindAddressing CdcEventKind = "addressing"
+	CdcEventKindAction  CdcEventKind = "action"
+	CdcEventKindChunk   CdcEventKind = "chunk"
+	CdcEventKindMention CdcEventKind = "mention"
 )
 
 type ChangeEvent struct {
@@ -23,7 +23,7 @@ type ChangeEvent struct {
 	ChannelName string
 	Action      *entities.Action
 	Chunk       *entities.LlmChunkResponse
-	Addressing  *entities.Addressing
+	Mention     *entities.Mention
 }
 
 type Agent struct {
@@ -78,7 +78,7 @@ func (a *Agent) Ask(
 		return
 	}
 
-	fromDutyRecord, err := qtx.GetFirstDuty(ctx, fromRoleRecord.ID)
+	fromTaskRecord, err := qtx.GetFirstTask(ctx, fromRoleRecord.ID)
 	if err != nil {
 		logger.Error("failed to get user persona", zap.Error(err))
 		return
@@ -104,28 +104,28 @@ func (a *Agent) Ask(
 			return
 		}
 
-		addressingTurnRecord, er := createTurn(ctx, qtx, EventKindAddressing, logger)
+		mentionTurnRecord, er := createTurn(ctx, qtx, EventKindMention, logger)
 		err = er
 		if err != nil {
-			logger.Error("failed to create addressing turn", zap.Error(err))
+			logger.Error("failed to create mention turn", zap.Error(err))
 			return
 		}
 
 		toolCallId := ulid.Make().String()
-		createAddressingParams := entities.CreateAddressingParams{
+		createMentionParams := entities.CreateMentionParams{
 			ID:               ulid.Make().String(),
-			TurnID:           addressingTurnRecord.ID,
+			TurnID:           mentionTurnRecord.ID,
 			ToolCallID:       toolCallId,
-			FromMemberDutyID: fromDutyRecord.ID,
+			FromMemberTaskID: fromTaskRecord.ID,
 			ToMemberName:     toMemberRecord.Name,
 			Message:          message,
 		}
 
-		_, err = qtx.CreateAddressing(ctx, createAddressingParams)
+		_, err = qtx.CreateMention(ctx, createMentionParams)
 		if err != nil {
 			return
 		}
-		orchestrationPlan.addressingTurnIds = append(orchestrationPlan.addressingTurnIds, addressingTurnRecord.ID)
+		orchestrationPlan.mentionTurnIds = append(orchestrationPlan.mentionTurnIds, mentionTurnRecord.ID)
 	}
 
 	err = trx.Commit()
@@ -134,15 +134,15 @@ func (a *Agent) Ask(
 		return
 	}
 
-	for _, addressingTurnId := range orchestrationPlan.addressingTurnIds {
-		addressingReply, er := a.reply(ctx, addressingTurnId, logger) // short circuit if the reply requries tool calls
+	for _, mentionTurnId := range orchestrationPlan.mentionTurnIds {
+		mentionReply, er := a.reply(ctx, mentionTurnId, logger) // short circuit if the reply requries tool calls
 		err = er
 		if err != nil {
-			logger.Error("failed to reply to addressing", zap.Error(err))
+			logger.Error("failed to reply to mention", zap.Error(err))
 			return
 		}
-		reply.actionIds = append(reply.actionIds, addressingReply.actionIds...)
-		reply.replyTurnIds = append(reply.replyTurnIds, addressingReply.replyTurnIds...)
+		reply.actionIds = append(reply.actionIds, mentionReply.actionIds...)
+		reply.replyTurnIds = append(reply.replyTurnIds, mentionReply.replyTurnIds...)
 	}
 
 	return

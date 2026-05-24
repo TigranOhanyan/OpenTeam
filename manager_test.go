@@ -143,7 +143,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		return err
 	}
 
-	janeLobbyFirstImpression, err := q.CreateDuty(ctx, entities.CreateDutyParams{
+	janeLobbyFirstImpression, err := q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-lobby-first-impression",
 		RoleID:      janeLobbyRole.ID,
 		Instruction: "You are a first impression in the lobby.",
@@ -151,11 +151,11 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		StreamMode:  false,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
-	janeLobbyDecisionMake, err := q.CreateDuty(ctx, entities.CreateDutyParams{
+	janeLobbyDecisionMake, err := q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-lobby-decision-make",
 		RoleID:      janeLobbyRole.ID,
 		PrevID:      sql.NullString{String: janeLobbyFirstImpression.ID, Valid: true},
@@ -164,11 +164,11 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		StreamMode:  false,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
-	_, err = q.CreateDuty(ctx, entities.CreateDutyParams{
+	_, err = q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-war-room-coordinator",
 		RoleID:      janeWarRoomRole.ID,
 		PrevID:      sql.NullString{String: janeLobbyDecisionMake.ID, Valid: true},
@@ -177,7 +177,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		StreamMode:  false,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
@@ -191,7 +191,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		return err
 	}
 
-	_, err = q.CreateDuty(ctx, entities.CreateDutyParams{
+	_, err = q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "john-war-room-expert",
 		RoleID:      johnWarRoomRole.ID,
 		Instruction: "You are a expert in the war room.",
@@ -199,7 +199,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		StreamMode:  false,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
@@ -213,7 +213,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		return err
 	}
 
-	_, err = q.CreateDuty(ctx, entities.CreateDutyParams{
+	_, err = q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jim-the-user",
 		RoleID:      jimLobbyRole.ID,
 		Instruction: "You are the user.",
@@ -221,7 +221,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		StreamMode:  false,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 

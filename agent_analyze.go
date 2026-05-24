@@ -15,25 +15,25 @@ import (
 )
 
 var UnexpectedMessageStructureError = errors.New("unexpected message structure")
-var InvalidAddressingArgumentsError = errors.New("invalid addressing arguments")
+var InvalidMentionArgumentsError = errors.New("invalid mention arguments")
 
 type Plan struct {
-	addressingTurnIds []string
-	actingTurnIds     []string
+	mentionTurnIds []string
+	actingTurnIds  []string
 }
 
 func (o *Plan) isOnlyControl() bool {
-	return len(o.addressingTurnIds) != 0 && len(o.actingTurnIds) == 0
+	return len(o.mentionTurnIds) != 0 && len(o.actingTurnIds) == 0
 }
 
 func (o *Plan) isFinalReply() bool {
-	return len(o.addressingTurnIds) == 0 && len(o.actingTurnIds) == 0
+	return len(o.mentionTurnIds) == 0 && len(o.actingTurnIds) == 0
 }
 
 func (a *Agent) analyze(
 	ctx context.Context,
 	turnRecord entities.Turn,
-	addressing Addressing,
+	mention Mention,
 	logger *zap.Logger,
 ) (
 	reply Reply,
@@ -56,7 +56,7 @@ func (a *Agent) analyze(
 	}()
 	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
 
-	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, turnRecord.ID, addressing.toDuty, logger)
+	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, turnRecord.ID, mention.toTask, logger)
 	if err != nil {
 		logger.Error("failed to get llm response as message", zap.Error(err))
 		return
@@ -71,10 +71,10 @@ func (a *Agent) analyze(
 
 	assistantMessage := llmResponseAsMessage.OfAssistant
 
-	addressingFactory := AddressingFactory{
-		fromAddressing: addressing,
-		qtx:            qtx,
-		stream:         a.ChangeStream,
+	mentionFactory := MentionFactory{
+		fromMention: mention,
+		qtx:         qtx,
+		stream:      a.ChangeStream,
 	}
 
 	orchestrationPlan := Plan{}
@@ -92,14 +92,14 @@ func (a *Agent) analyze(
 		}
 		if strings.EqualFold(function.Function.Name, addressToAgentFunction.Name) {
 
-			addressingTurnId, er := addressingFactory.persistAddressing(ctx, args, function.ID, logger)
+			mentionTurnId, er := mentionFactory.persistMention(ctx, args, function.ID, logger)
 			err = er
 			if err != nil {
-				logger.Error("failed to persist addressing", zap.Error(err))
+				logger.Error("failed to persist mention", zap.Error(err))
 				return
 			}
 
-			orchestrationPlan.addressingTurnIds = append(orchestrationPlan.addressingTurnIds, addressingTurnId)
+			orchestrationPlan.mentionTurnIds = append(orchestrationPlan.mentionTurnIds, mentionTurnId)
 		} else {
 			err = UnexpectedMessageStructureError
 			return
@@ -121,7 +121,7 @@ func (a *Agent) analyze(
 			return
 		}
 
-		setName(&llmResponseAsMessage, addressing.toMemberName)
+		setName(&llmResponseAsMessage, mention.toMemberName)
 
 		turnIntoUserMessage(&llmResponseAsMessage)
 
@@ -138,9 +138,9 @@ func (a *Agent) analyze(
 			ID:            messageId,
 			Visibility:    string(VisibilityChannel),
 			TurnID:        replyTurnRecord.ID,
-			ChannelName:   addressing.channelName,
-			RoleID:        addressing.toRoleID,
-			DutyID:        addressing.toDuty.ID,
+			ChannelName:   mention.channelName,
+			RoleID:        mention.toRoleID,
+			TaskID:        mention.toTask.ID,
 			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
 		}
 
@@ -163,14 +163,14 @@ func (a *Agent) analyze(
 		return
 	}
 
-	for _, addressingTurnId := range orchestrationPlan.addressingTurnIds {
-		addressingReply, er := a.reply(ctx, addressingTurnId, logger) // short circuit if the reply requries tool calls
+	for _, mentionTurnId := range orchestrationPlan.mentionTurnIds {
+		mentionReply, er := a.reply(ctx, mentionTurnId, logger) // short circuit if the reply requries tool calls
 		err = er
 		if err != nil {
-			logger.Error("failed to reply to addressing", zap.Error(err))
+			logger.Error("failed to reply to mention", zap.Error(err))
 			return
 		}
-		reply.actionIds = append(reply.actionIds, addressingReply.actionIds...)
+		reply.actionIds = append(reply.actionIds, mentionReply.actionIds...)
 	}
 
 	thinkingTurnRecord, err := createTurn(ctx, qtx, EventKindThinking, logger)
@@ -181,7 +181,7 @@ func (a *Agent) analyze(
 		return
 	}
 
-	reply, err = a.think(ctx, thinkingTurnRecord, addressing, logger)
+	reply, err = a.think(ctx, thinkingTurnRecord, mention, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return
@@ -190,74 +190,74 @@ func (a *Agent) analyze(
 
 }
 
-type AddressingFactory struct {
-	fromAddressing Addressing
-	qtx            *entities.Queries
-	stream         chan<- ChangeEvent
+type MentionFactory struct {
+	fromMention Mention
+	qtx         *entities.Queries
+	stream      chan<- ChangeEvent
 }
 
-func (a *AddressingFactory) persistAddressing(
+func (a *MentionFactory) persistMention(
 	ctx context.Context,
 	arguments map[string]interface{},
 	toolCallId string,
 	logger *zap.Logger,
 ) (
-	addressingTurnId string,
+	mentionTurnId string,
 	err error,
 ) {
 
 	toMemberName := arguments["agent_name"].(string)
 	if toMemberName == "" {
-		err = InvalidAddressingArgumentsError
+		err = InvalidMentionArgumentsError
 		return
 	}
 	message := arguments["message"].(string)
 	if message == "" {
-		err = InvalidAddressingArgumentsError
+		err = InvalidMentionArgumentsError
 		return
 	}
 
-	turnRecord, err := createTurn(ctx, a.qtx, EventKindAddressing, logger)
+	turnRecord, err := createTurn(ctx, a.qtx, EventKindMention, logger)
 
 	if err != nil {
 		return
 	}
 
-	err = linkTurns(ctx, a.qtx, a.fromAddressing.turnID, turnRecord.ID, logger)
+	err = linkTurns(ctx, a.qtx, a.fromMention.turnID, turnRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to link turns", zap.Error(err))
 		return
 	}
 
-	createAddressingParams := entities.CreateAddressingParams{
+	createMentionParams := entities.CreateMentionParams{
 		ID:               ulid.Make().String(),
 		TurnID:           turnRecord.ID,
 		ToolCallID:       toolCallId,
-		FromMemberDutyID: a.fromAddressing.toDuty.ID,
+		FromMemberTaskID: a.fromMention.toTask.ID,
 		ToMemberName:     toMemberName,
 		Message:          message,
 	}
 
-	addressingRecord, err := a.qtx.CreateAddressing(ctx, createAddressingParams)
+	mentionRecord, err := a.qtx.CreateMention(ctx, createMentionParams)
 	if err != nil {
 		return
 	}
 
 	a.stream <- ChangeEvent{
-		Kind:        CdcEventKindAddressing,
+		Kind:        CdcEventKindMention,
 		TurnID:      turnRecord.ID,
-		ChannelName: a.fromAddressing.channelName,
-		Addressing: &entities.Addressing{
-			ID:               addressingRecord.ID,
+		ChannelName: a.fromMention.channelName,
+		Mention: &entities.Mention{
+			ID:               mentionRecord.ID,
 			TurnID:           turnRecord.ID,
-			FromMemberDutyID: addressingRecord.FromMemberDutyID,
-			ToMemberName:     addressingRecord.ToMemberName,
-			ToolCallID:       addressingRecord.ToolCallID,
-			Message:          addressingRecord.Message,
+			FromMemberTaskID: mentionRecord.FromMemberTaskID,
+			ToMemberName:     mentionRecord.ToMemberName,
+			ToolCallID:       mentionRecord.ToolCallID,
+			Message:          mentionRecord.Message,
 		},
 	}
 
-	addressingTurnId = turnRecord.ID
+	mentionTurnId = turnRecord.ID
 
 	return
 
@@ -266,7 +266,7 @@ func (a *AddressingFactory) persistAddressing(
 func (a *Agent) llmResponseToMessage(
 	ctx context.Context,
 	turnId string,
-	duty entities.Duty,
+	task entities.Task,
 	logger *zap.Logger,
 ) (
 	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
@@ -274,7 +274,7 @@ func (a *Agent) llmResponseToMessage(
 	err error,
 ) {
 
-	if duty.StreamMode {
+	if task.StreamMode {
 		logger.Info("getting LLM chunk response...")
 		llmChunkResponseRecords, er := a.ConversationHistoryDb.Queries.GetLlmChunkResponseByTurn(ctx, turnId)
 		err = er

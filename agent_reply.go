@@ -43,15 +43,15 @@ func (a *Agent) reply(
 		return
 	}
 
-	addressing, err := reconstituteAddressing(ctx, qtx, turnRecord, logger)
+	mention, err := reconstituteMention(ctx, qtx, turnRecord, logger)
 	if err != nil {
 		logger.Error("failed to reconstitute replying context", zap.Error(err))
 		return
 	}
 
-	thinkingTurnRecord, err := addressing.persistAddressingMessage(ctx, qtx, turnRecord, logger)
+	thinkingTurnRecord, err := mention.persistMentionMessage(ctx, qtx, turnRecord, logger)
 	if err != nil {
-		logger.Error("failed to persist addressing message", zap.Error(err))
+		logger.Error("failed to persist mention message", zap.Error(err))
 		return
 	}
 
@@ -61,7 +61,7 @@ func (a *Agent) reply(
 		return
 	}
 
-	reply, err = a.think(ctx, thinkingTurnRecord, addressing, logger)
+	reply, err = a.think(ctx, thinkingTurnRecord, mention, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return
@@ -70,20 +70,20 @@ func (a *Agent) reply(
 	return
 }
 
-type Addressing struct {
-	addressingID   string
+type Mention struct {
+	mentionID      string
 	turnID         string
 	channelName    string
 	fromMemberName string
 	fromRoleID     string
-	fromDutyID     string
+	fromTaskID     string
 	toMemberName   string
 	toRoleID       string
-	toDuty         entities.Duty
+	toTask         entities.Task
 	message        string
 }
 
-func (a Addressing) persistAddressingMessage(
+func (a Mention) persistMentionMessage(
 	ctx context.Context,
 	qtx *entities.Queries,
 	turnRecord entities.Turn,
@@ -105,12 +105,12 @@ func (a Addressing) persistAddressingMessage(
 		return
 	}
 
-	addressingMessage := fmt.Sprintf("%s! %s", a.toMemberName, a.message)
+	mentionMessage := fmt.Sprintf("%s! %s", a.toMemberName, a.message)
 
 	openAiMessage := openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{
 			Content: openai.ChatCompletionUserMessageParamContentUnion{
-				OfString: param.NewOpt(addressingMessage),
+				OfString: param.NewOpt(mentionMessage),
 			},
 			Name: param.NewOpt(a.fromMemberName),
 		},
@@ -129,7 +129,7 @@ func (a Addressing) persistAddressingMessage(
 		TurnID:        thinkingTurnRecord.ID,
 		ChannelName:   a.channelName,
 		RoleID:        a.toRoleID,
-		DutyID:        a.toDuty.ID,
+		TaskID:        a.toTask.ID,
 	}
 	_, err = qtx.CreateMessage(ctx, createMessageParams)
 	if err != nil {
@@ -140,25 +140,25 @@ func (a Addressing) persistAddressingMessage(
 	return
 }
 
-func reconstituteAddressing(
+func reconstituteMention(
 	ctx context.Context,
 	qtx *entities.Queries,
 	turnRecord entities.Turn,
 	logger *zap.Logger,
 ) (
-	addressing Addressing,
+	mention Mention,
 	err error,
 ) {
 
 	logger = logger.With(zap.String("turnId", turnRecord.ID))
 
-	addressingRecord, err := qtx.GetAddressingByTurn(ctx, turnRecord.ID)
+	mentionRecord, err := qtx.GetMentionByTurn(ctx, turnRecord.ID)
 	if err != nil {
-		logger.Error("failed to get addressing", zap.Error(err))
+		logger.Error("failed to get mention", zap.Error(err))
 		return
 	}
 
-	fromRoleRecord, err := qtx.GetRoleByDuty(ctx, addressingRecord.FromMemberDutyID)
+	fromRoleRecord, err := qtx.GetRoleByTask(ctx, mentionRecord.FromMemberTaskID)
 	if err != nil {
 		logger.Error("failed to get role", zap.Error(err))
 		return
@@ -172,13 +172,13 @@ func reconstituteAddressing(
 	}
 	logger = logger.With(zap.String("channelId", channelRecord.Name))
 
-	fromMemberRecord, err := qtx.GetMemberByDuty(ctx, addressingRecord.FromMemberDutyID)
+	fromMemberRecord, err := qtx.GetMemberByTask(ctx, mentionRecord.FromMemberTaskID)
 	if err != nil {
 		logger.Error("failed to get from member", zap.Error(err))
 		return
 	}
 
-	toMemberRecord, err := qtx.GetMember(ctx, addressingRecord.ToMemberName)
+	toMemberRecord, err := qtx.GetMember(ctx, mentionRecord.ToMemberName)
 	if err != nil {
 		logger.Error("failed to get to participant", zap.Error(err))
 		return
@@ -195,23 +195,23 @@ func reconstituteAddressing(
 		return
 	}
 
-	toDutyRecord, err := qtx.GetFirstDuty(ctx, toRoleRecord.ID)
+	toTaskRecord, err := qtx.GetFirstTask(ctx, toRoleRecord.ID)
 	if err != nil {
 		logger.Error("failed to get to persona", zap.Error(err))
 		return
 	}
 
-	addressing = Addressing{
-		addressingID:   addressingRecord.ID,
+	mention = Mention{
+		mentionID:      mentionRecord.ID,
 		turnID:         turnRecord.ID,
 		channelName:    channelRecord.Name,
 		fromMemberName: fromMemberRecord.Name,
 		fromRoleID:     fromRoleRecord.ID,
-		fromDutyID:     addressingRecord.FromMemberDutyID,
+		fromTaskID:     mentionRecord.FromMemberTaskID,
 		toMemberName:   toMemberRecord.Name,
 		toRoleID:       toRoleRecord.ID,
-		toDuty:         toDutyRecord,
-		message:        addressingRecord.Message,
+		toTask:         toTaskRecord,
+		message:        mentionRecord.Message,
 	}
 
 	return

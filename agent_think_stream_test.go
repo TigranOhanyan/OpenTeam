@@ -310,7 +310,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.NoError(t, err)
 
 	actualTurn1 := allTurns[0]
-	assert.Equal(t, actualTurn1.Kind, string(EventKindAddressing))
+	assert.Equal(t, actualTurn1.Kind, string(EventKindMention))
 
 	actualTurn2 := allTurns[1]
 	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
@@ -465,7 +465,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.NoError(t, err)
 
 	actualTurn1 := allTurns[0]
-	assert.Equal(t, actualTurn1.Kind, string(EventKindAddressing))
+	assert.Equal(t, actualTurn1.Kind, string(EventKindMention))
 
 	actualTurn2 := allTurns[1]
 	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
@@ -503,7 +503,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
 
 	actualTurn5 := allTurns[4]
-	assert.Equal(t, actualTurn5.Kind, string(EventKindAddressing))
+	assert.Equal(t, actualTurn5.Kind, string(EventKindMention))
 
 	actualTurn6 := allTurns[5]
 	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
@@ -609,7 +609,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		return err
 	}
 
-	janeLobbyFirstImpression, err := q.CreateDuty(ctx, entities.CreateDutyParams{
+	janeLobbyFirstImpression, err := q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-lobby-first-impression",
 		RoleID:      janeLobbyRole.ID,
 		Instruction: "You are a first impression in the lobby.",
@@ -617,11 +617,11 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		StreamMode:  true,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
-	janeLobbyDecisionMake, err := q.CreateDuty(ctx, entities.CreateDutyParams{
+	janeLobbyDecisionMake, err := q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-lobby-decision-make",
 		RoleID:      janeLobbyRole.ID,
 		PrevID:      sql.NullString{String: janeLobbyFirstImpression.ID, Valid: true},
@@ -630,11 +630,11 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		StreamMode:  true,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
-	_, err = q.CreateDuty(ctx, entities.CreateDutyParams{
+	_, err = q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-war-room-coordinator",
 		RoleID:      janeWarRoomRole.ID,
 		PrevID:      sql.NullString{String: janeLobbyDecisionMake.ID, Valid: true},
@@ -643,7 +643,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		StreamMode:  true,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
@@ -657,7 +657,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		return err
 	}
 
-	_, err = q.CreateDuty(ctx, entities.CreateDutyParams{
+	_, err = q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "john-war-room-expert",
 		RoleID:      johnWarRoomRole.ID,
 		Instruction: "You are a expert in the war room.",
@@ -665,7 +665,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		StreamMode:  true,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 
@@ -679,7 +679,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		return err
 	}
 
-	_, err = q.CreateDuty(ctx, entities.CreateDutyParams{
+	_, err = q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jim-the-user",
 		RoleID:      jimLobbyRole.ID,
 		Instruction: "You are the user.",
@@ -687,7 +687,7 @@ func makeTeamForCallLLMTestInStreamMode(ctx context.Context, teamDb *TeamDb) (er
 		StreamMode:  true,
 	})
 	if err != nil {
-		testLogger.Error("failed to create duty", zap.Error(err))
+		testLogger.Error("failed to create task", zap.Error(err))
 		return err
 	}
 

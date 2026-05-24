@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE duties (
+CREATE TABLE tasks (
     id TEXT PRIMARY KEY,
     role_id TEXT NOT NULL,
     prev_id TEXT,
@@ -7,5 +7,5 @@ CREATE TABLE duties (
     model TEXT NOT NULL,
     stream_mode BOOLEAN NOT NULL,
     FOREIGN KEY (role_id) REFERENCES roles(id),
-    FOREIGN KEY (prev_id) REFERENCES duties(id)
+    FOREIGN KEY (prev_id) REFERENCES tasks(id)
 );

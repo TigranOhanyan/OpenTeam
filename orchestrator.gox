@@ -17,35 +17,35 @@ import (
 var ErrEmptyOrchestrationPlan = errors.New("empty orchestration plan")
 
 type TurnTransferPlan struct {
-	replyDutyId       *string
-	addressingDutyIds []string
-	actingDutyIds     []string
+	replyTaskId       *string
+	mentionTaskIds []string
+	actingTaskIds     []string
 }
 
 func (o *TurnTransferPlan) isOnlyControl() bool {
-	return o.replyDutyId == nil && len(o.addressingDutyIds) != 0 && len(o.actingDutyIds) == 0
+	return o.replyTaskId == nil && len(o.mentionTaskIds) != 0 && len(o.actingTaskIds) == 0
 }
 
 func (o *TurnTransferPlan) isFinalReply() bool {
-	return o.replyDutyId != nil && len(o.addressingDutyIds) == 0 && len(o.actingDutyIds) == 0
+	return o.replyTaskId != nil && len(o.mentionTaskIds) == 0 && len(o.actingTaskIds) == 0
 }
 
 func (o *TurnTransferPlan) isEmpty() bool {
-	return o.replyDutyId == nil && len(o.addressingDutyIds) == 0 && len(o.actingDutyIds) == 0
+	return o.replyTaskId == nil && len(o.mentionTaskIds) == 0 && len(o.actingTaskIds) == 0
 }
 
 func (o *TurnTransferPlan) getFirstTurnId() (turnId string, err error) {
-	if o.replyDutyId != nil {
-		turnId = *o.replyDutyId
+	if o.replyTaskId != nil {
+		turnId = *o.replyTaskId
 		return
 	}
 
-	if len(o.addressingDutyIds) > 0 {
-		turnId = o.addressingDutyIds[0]
+	if len(o.mentionTaskIds) > 0 {
+		turnId = o.mentionTaskIds[0]
 		return
 	}
-	if len(o.actingDutyIds) > 0 {
-		turnId = o.actingDutyIds[0]
+	if len(o.actingTaskIds) > 0 {
+		turnId = o.actingTaskIds[0]
 		return
 	}
 
@@ -58,7 +58,7 @@ func transfer121(
 	qtx *entities.Queries,
 	currentTurnId string,
 	nextTurnKind EventKind,
-	nextTurnDutyId string,
+	nextTurnTaskId string,
 	logger *zap.Logger,
 ) (
 	nextTurnId string,
@@ -66,7 +66,7 @@ func transfer121(
 ) {
 	nextTurnRecordParams := entities.CreateTurnParams{
 		ID:     ulid.Make().String(),
-		DutyID: nextTurnDutyId,
+		TaskID: nextTurnTaskId,
 		Kind:   string(nextTurnKind),
 		Status: string(TurnStatusPending),
 	}
@@ -104,15 +104,15 @@ func (fanOut TurnTransferPlan) transferFanOut(
 	currentTurnRecord, err := a.ConversationHistoryDb.Queries.GetTurn(ctx, currentTurnId)
 	logger = logger.With(zap.String("currentTurnId", currentTurnRecord.ID))
 
-	logger.Info("getting duty of current turn...")
-	dutyOfcurrentTurnRecord, err := a.ConversationHistoryDb.Queries.GetDutyByTurn(ctx, currentTurnRecord.ID)
+	logger.Info("getting task of current turn...")
+	taskOfcurrentTurnRecord, err := a.ConversationHistoryDb.Queries.GetTaskByTurn(ctx, currentTurnRecord.ID)
 	if err != nil {
-		logger.Error("failed to get duty", zap.Error(err))
+		logger.Error("failed to get task", zap.Error(err))
 		return
 	}
-	logger = logger.With(zap.String("dutyId", dutyOfcurrentTurnRecord.ID))
+	logger = logger.With(zap.String("taskId", taskOfcurrentTurnRecord.ID))
 
-	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, currentTurnRecord.ID, dutyOfcurrentTurnRecord, logger)
+	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, currentTurnRecord.ID, taskOfcurrentTurnRecord, logger)
 	if err != nil {
 		logger.Error("failed to get llm response as message", zap.Error(err))
 		return
@@ -120,13 +120,13 @@ func (fanOut TurnTransferPlan) transferFanOut(
 
 	logger = logger.With(zap.String("messageId", messageId))
 
-	memberRecord, err := a.ConversationHistoryDb.Queries.GetMemberByDuty(ctx, dutyOfcurrentTurnRecord.ID)
+	memberRecord, err := a.ConversationHistoryDb.Queries.GetMemberByTask(ctx, taskOfcurrentTurnRecord.ID)
 	if err != nil {
 		logger.Error("failed to get name", zap.Error(err))
 		return
 	}
 
-	roleOfcurrentTurnRecord, er := a.ConversationHistoryDb.Queries.GetRoleByDuty(ctx, dutyOfcurrentTurnRecord.ID)
+	roleOfcurrentTurnRecord, er := a.ConversationHistoryDb.Queries.GetRoleByTask(ctx, taskOfcurrentTurnRecord.ID)
 	err = er
 	if err != nil {
 		logger.Error("failed to get role", zap.Error(err))
@@ -174,13 +174,13 @@ func (fanOut TurnTransferPlan) transferFanOut(
 		}
 		if strings.EqualFold(function.Function.Name, addressToAgentFunction.Name) {
 
-			fanOutTurnId, er := a.handleAddressing(ctx, qtx, currentTurnRecord, function.ID, channelRecord.Name, dutyOfcurrentTurnRecord.ID, args, logger)
+			fanOutTurnId, er := a.handleMention(ctx, qtx, currentTurnRecord, function.ID, channelRecord.Name, taskOfcurrentTurnRecord.ID, args, logger)
 			err = er
 			if err != nil {
-				logger.Error("failed to handle addressing", zap.Error(err))
+				logger.Error("failed to handle mention", zap.Error(err))
 				return
 			}
-			fanOutTurnIds.addressingTurnIds = append(fanOutTurnIds.addressingTurnIds, fanOutTurnId)
+			fanOutTurnIds.mentionTurnIds = append(fanOutTurnIds.mentionTurnIds, fanOutTurnId)
 		} else {
 			err = UnexpectedMessageStructureError
 			return
@@ -194,7 +194,7 @@ func (fanOut TurnTransferPlan) transferFanOut(
 			logger.Error("failed to handle reply", zap.Error(err))
 			return
 		}
-		fanOutTurnIds.replyDutyId = &replyTurnId
+		fanOutTurnIds.replyTaskId = &replyTurnId
 		return
 	}
 
@@ -220,7 +220,7 @@ func (fanOut TurnTransferPlan) transferFanOut(
 			TurnID:        currentTurnRecord.ID,
 			ChannelName:   channelRecord.Name,
 			RoleID:        roleOfcurrentTurnRecord.ID,
-			DutyID:        dutyOfcurrentTurnRecord.ID,
+			TaskID:        taskOfcurrentTurnRecord.ID,
 			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
 		}
 

@@ -19,7 +19,7 @@ func (a *Agent) insertChunk(
 	}
 
 	if a.ChangeStream != nil {
-		roleRecord, err := qtx.GetRoleByDuty(ctx, params.DutyID)
+		roleRecord, err := qtx.GetRoleByTask(ctx, params.TaskID)
 		if err != nil {
 			return err
 		}
@@ -36,7 +36,7 @@ func (a *Agent) insertChunk(
 				ID:                  params.ID,
 				SequenceNumber:      params.SequenceNumber,
 				TurnID:              params.TurnID,
-				DutyID:              params.DutyID,
+				TaskID:              params.TaskID,
 				OpenaiChunkResponse: params.OpenaiChunkResponse,
 			},
 		}
@@ -56,11 +56,11 @@ func (a *Agent) insertAction(
 	}
 
 	if a.ChangeStream != nil {
-		dutyRecord, err := qtx.GetDutyByTurn(ctx, params.TurnID)
+		taskRecord, err := qtx.GetTaskByTurn(ctx, params.TurnID)
 		if err != nil {
 			return err
 		}
-		roleRecord, err := qtx.GetRoleByDuty(ctx, dutyRecord.ID)
+		roleRecord, err := qtx.GetRoleByTask(ctx, taskRecord.ID)
 		if err != nil {
 			return err
 		}
@@ -85,23 +85,23 @@ func (a *Agent) insertAction(
 	return nil
 }
 
-func (a *Agent) insertAddressing(
+func (a *Agent) insertMention(
 	ctx context.Context,
 	qtx *entities.Queries,
-	params entities.CreateAddressingParams,
+	params entities.CreateMentionParams,
 	logger *zap.Logger,
 ) error {
-	_, err := qtx.CreateAddressing(ctx, params)
+	_, err := qtx.CreateMention(ctx, params)
 	if err != nil {
 		return err
 	}
 
 	if a.ChangeStream != nil {
-		dutyRecord, err := qtx.GetDutyByTurn(ctx, params.TurnID)
+		taskRecord, err := qtx.GetTaskByTurn(ctx, params.TurnID)
 		if err != nil {
 			return err
 		}
-		roleRecord, err := qtx.GetRoleByDuty(ctx, dutyRecord.ID)
+		roleRecord, err := qtx.GetRoleByTask(ctx, taskRecord.ID)
 		if err != nil {
 			return err
 		}
@@ -111,13 +111,13 @@ func (a *Agent) insertAddressing(
 		}
 
 		a.ChangeStream <- ChangeEvent{
-			Kind:        CdcEventKindAddressing,
+			Kind:        CdcEventKindMention,
 			TurnID:      params.TurnID,
 			ChannelName: channelRecord.Name,
-			Addressing: &entities.Addressing{
+			Mention: &entities.Mention{
 				ID:               params.ID,
 				TurnID:           params.TurnID,
-				FromMemberDutyID: params.FromMemberDutyID,
+				FromMemberTaskID: params.FromMemberTaskID,
 				ToMemberName:     params.ToMemberName,
 				ToolCallID:       params.ToolCallID,
 				Message:          params.Message,
