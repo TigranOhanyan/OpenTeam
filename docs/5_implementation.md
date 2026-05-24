@@ -27,7 +27,7 @@ There is one active orchestrator per request. It acts as the scheduler for the o
     *   *Intra-Agent:* An individual Member's Tasks are strictly sequential (e.g., Security must pass before Worker starts).
     *   *Inter-Agent:* Multiple active Members run their respective Tasks in parallel.
 4.  **Process Protocol Tools:** 
-    *   If an LLM calls `ask_member` (even for multiple peers), the engine spawns concurrent tasks for the target Members.
+    *   If an LLM calls `mention_member` (even for multiple peers), the engine spawns concurrent tasks for the target Members.
     *   If an LLM calls `liaise_to_channel`, the engine writes the summary to the target Channel and wakes up the relevant Member in that Channel concurrently.
     *   If an LLM calls `pass_to_next_task`, the engine advances that specific Member's internal state.
 5.  **Process Expert Tools:** If an LLM calls domain tools (e.g., `query_db`, `search_web`), the engine executes these Go functions concurrently, synchronizes the results back to the SQLite state, and resumes the Member.

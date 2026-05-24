@@ -90,7 +90,7 @@ func (a *Agent) act(
 			logger.Error("failed to unmarshal articulattion", zap.Error(err))
 			return
 		}
-		if strings.EqualFold(function.Function.Name, addressToAgentFunction.Name) {
+		if strings.EqualFold(function.Function.Name, mentionMemberFunction.Name) {
 
 			mentionStepId, er := mentionFactory.persistMention(ctx, args, function.ID, logger)
 			err = er

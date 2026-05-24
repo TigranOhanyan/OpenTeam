@@ -23,7 +23,7 @@ If the engine handles network-based tool calls internally, it still requires a c
 By yielding to the host, OpenTeam treats a human exactly like a very slow tool. Mechanically, the engine only needs to understand one concept: **Suspension**.
 
 *   **Tool Call:** Engine hits `query_db` -> Yields to host -> Host runs DB query -> Host resumes engine.
-*   **Human Input:** Engine hits `ask_member` (for a Human) -> Yields to host -> Host waits for UI input -> Host resumes engine.
+*   **Human Input:** Engine hits `mention_member` (for a Human) -> Yields to host -> Host waits for UI input -> Host resumes engine.
 
 ### 2. Preserving the "Portable Artifact" Superpower
 

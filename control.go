@@ -7,9 +7,9 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 )
 
-var addressToAgentFunction = openai.FunctionDefinitionParam{
-	Name:        "address_to_agent",
-	Description: param.NewOpt("Call this to address to the agent."),
+var mentionMemberFunction = openai.FunctionDefinitionParam{
+	Name:        "mention_member",
+	Description: param.NewOpt("Call this to mention the agent."),
 	Parameters: openai.FunctionParameters{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -40,7 +40,7 @@ var handoffToAgentFunction = openai.FunctionDefinitionParam{
 	Strict: param.NewOpt(true),
 }
 
-var controlToolCallNames = []string{addressToAgentFunction.Name, handoffToAgentFunction.Name}
+var controlToolCallNames = []string{mentionMemberFunction.Name, handoffToAgentFunction.Name}
 
 func filterControlToolCalls(
 	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
