@@ -31,7 +31,7 @@ This acts exactly like "Guard Clauses" in traditional programming.
 
 **Step 1: The Guardrail Task (e.g., Security/Relevance)**
 *   The LLM is invoked with the first Task's instructions.
-*   *Short-circuit:* If the LLM detects an issue (e.g., a jailbreak or an off-topic request), it ignores the Protocol Tools and simply outputs a text response. The turn ends immediately, protecting the rest of the system.
+*   *Short-circuit:* If the LLM detects an issue (e.g., a jailbreak or an off-topic request), it ignores the Protocol Tools and simply outputs a text response. The step ends immediately, protecting the rest of the system.
 *   *Pass:* If the LLM determines it is safe, it calls the **Task-Pass Tool**.
 
 **Step 2: The Execution Task (e.g., The Worker)**

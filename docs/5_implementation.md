@@ -8,7 +8,7 @@ OpenTeam does not require a central, stateful database (like Postgres or Redis) 
 
 *   **Per-Request Isolation:** Each incoming request provides its own state. The framework spins up a temporary SQLite database (e.g., in-memory or `/tmp/{request_id}.db`) for the duration of the request.
 *   **The Artifact:** This SQLite file contains the entire OpenTeam schema: the Team, the Members, the Channels, the Roles, and the Message history.
-*   **Stateless Principle:** The OpenTeam engine itself is fully stateless. It takes an SQLite file as input, runs the execution loop, mutates the SQLite file, and returns it. The host application is responsible for persisting this file (e.g., to S3 or a local disk) between turns.
+*   **Stateless Principle:** The OpenTeam engine itself is fully stateless. It takes an SQLite file as input, runs the execution loop, mutates the SQLite file, and returns it. The host application is responsible for persisting this file (e.g., to S3 or a local disk) between steps.
 
 This approach provides perfect "Time Travel" debugging. If a conversation fails, a developer can download the exact `.sqlite` file, feed it into the local OpenTeam engine, and reproduce the exact state.
 

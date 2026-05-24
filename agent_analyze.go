@@ -18,21 +18,21 @@ var UnexpectedMessageStructureError = errors.New("unexpected message structure")
 var InvalidMentionArgumentsError = errors.New("invalid mention arguments")
 
 type Plan struct {
-	mentionTurnIds []string
-	actingTurnIds  []string
+	mentionStepIds []string
+	actingStepIds  []string
 }
 
 func (o *Plan) isOnlyControl() bool {
-	return len(o.mentionTurnIds) != 0 && len(o.actingTurnIds) == 0
+	return len(o.mentionStepIds) != 0 && len(o.actingStepIds) == 0
 }
 
 func (o *Plan) isFinalReply() bool {
-	return len(o.mentionTurnIds) == 0 && len(o.actingTurnIds) == 0
+	return len(o.mentionStepIds) == 0 && len(o.actingStepIds) == 0
 }
 
 func (a *Agent) analyze(
 	ctx context.Context,
-	turnRecord entities.Turn,
+	stepRecord entities.Step,
 	mention Mention,
 	logger *zap.Logger,
 ) (
@@ -40,8 +40,8 @@ func (a *Agent) analyze(
 	err error,
 ) {
 
-	logger = logger.With(zap.String("turnId", turnRecord.ID))
-	logger.Info("getting current turn...")
+	logger = logger.With(zap.String("stepId", stepRecord.ID))
+	logger.Info("getting current step...")
 
 	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -56,7 +56,7 @@ func (a *Agent) analyze(
 	}()
 	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
 
-	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, turnRecord.ID, mention.toTask, logger)
+	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, stepRecord.ID, mention.toTask, logger)
 	if err != nil {
 		logger.Error("failed to get llm response as message", zap.Error(err))
 		return
@@ -92,14 +92,14 @@ func (a *Agent) analyze(
 		}
 		if strings.EqualFold(function.Function.Name, addressToAgentFunction.Name) {
 
-			mentionTurnId, er := mentionFactory.persistMention(ctx, args, function.ID, logger)
+			mentionStepId, er := mentionFactory.persistMention(ctx, args, function.ID, logger)
 			err = er
 			if err != nil {
 				logger.Error("failed to persist mention", zap.Error(err))
 				return
 			}
 
-			orchestrationPlan.mentionTurnIds = append(orchestrationPlan.mentionTurnIds, mentionTurnId)
+			orchestrationPlan.mentionStepIds = append(orchestrationPlan.mentionStepIds, mentionStepId)
 		} else {
 			err = UnexpectedMessageStructureError
 			return
@@ -109,21 +109,21 @@ func (a *Agent) analyze(
 	if !orchestrationPlan.isOnlyControl() {
 		logger.Info("persisting message...")
 
-		replyTurnRecord, er := createTurn(ctx, qtx, EventKindReplying, logger)
+		replyStepRecord, er := createStep(ctx, qtx, EventKindReplying, logger)
 		err = er
 		if err != nil {
-			logger.Error("failed to create replying turn", zap.Error(err))
+			logger.Error("failed to create replying step", zap.Error(err))
 			return
 		}
-		err = linkTurns(ctx, qtx, turnRecord.ID, replyTurnRecord.ID, logger)
+		err = linkSteps(ctx, qtx, stepRecord.ID, replyStepRecord.ID, logger)
 		if err != nil {
-			logger.Error("failed to link turns", zap.Error(err))
+			logger.Error("failed to link steps", zap.Error(err))
 			return
 		}
 
 		setName(&llmResponseAsMessage, mention.toMemberName)
 
-		turnIntoUserMessage(&llmResponseAsMessage)
+		stepIntoUserMessage(&llmResponseAsMessage)
 
 		filteredLlmResponseAsMessage := filterControlToolCalls(llmResponseAsMessage)
 
@@ -137,7 +137,7 @@ func (a *Agent) analyze(
 		createMessageParams := entities.CreateMessageParams{
 			ID:            messageId,
 			Visibility:    string(VisibilityChannel),
-			TurnID:        replyTurnRecord.ID,
+			StepID:        replyStepRecord.ID,
 			ChannelName:   mention.channelName,
 			RoleID:        mention.toRoleID,
 			TaskID:        mention.toTask.ID,
@@ -150,7 +150,7 @@ func (a *Agent) analyze(
 			return
 		}
 
-		reply.replyTurnIds = append(reply.replyTurnIds, replyTurnRecord.ID)
+		reply.replyStepIds = append(reply.replyStepIds, replyStepRecord.ID)
 	}
 
 	err = trx.Commit()
@@ -163,8 +163,8 @@ func (a *Agent) analyze(
 		return
 	}
 
-	for _, mentionTurnId := range orchestrationPlan.mentionTurnIds {
-		mentionReply, er := a.reply(ctx, mentionTurnId, logger) // short circuit if the reply requries tool calls
+	for _, mentionStepId := range orchestrationPlan.mentionStepIds {
+		mentionReply, er := a.reply(ctx, mentionStepId, logger) // short circuit if the reply requries tool calls
 		err = er
 		if err != nil {
 			logger.Error("failed to reply to mention", zap.Error(err))
@@ -173,15 +173,15 @@ func (a *Agent) analyze(
 		reply.actionIds = append(reply.actionIds, mentionReply.actionIds...)
 	}
 
-	thinkingTurnRecord, err := createTurn(ctx, qtx, EventKindThinking, logger)
+	thinkingStepRecord, err := createStep(ctx, qtx, EventKindThinking, logger)
 
-	err = linkTurns(ctx, qtx, turnRecord.ID, thinkingTurnRecord.ID, logger)
+	err = linkSteps(ctx, qtx, stepRecord.ID, thinkingStepRecord.ID, logger)
 	if err != nil {
-		logger.Error("failed to link turns", zap.Error(err))
+		logger.Error("failed to link steps", zap.Error(err))
 		return
 	}
 
-	reply, err = a.think(ctx, thinkingTurnRecord, mention, logger)
+	reply, err = a.think(ctx, thinkingStepRecord, mention, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return
@@ -202,7 +202,7 @@ func (a *MentionFactory) persistMention(
 	toolCallId string,
 	logger *zap.Logger,
 ) (
-	mentionTurnId string,
+	mentionStepId string,
 	err error,
 ) {
 
@@ -217,21 +217,21 @@ func (a *MentionFactory) persistMention(
 		return
 	}
 
-	turnRecord, err := createTurn(ctx, a.qtx, EventKindMention, logger)
+	stepRecord, err := createStep(ctx, a.qtx, EventKindMention, logger)
 
 	if err != nil {
 		return
 	}
 
-	err = linkTurns(ctx, a.qtx, a.fromMention.turnID, turnRecord.ID, logger)
+	err = linkSteps(ctx, a.qtx, a.fromMention.stepID, stepRecord.ID, logger)
 	if err != nil {
-		logger.Error("failed to link turns", zap.Error(err))
+		logger.Error("failed to link steps", zap.Error(err))
 		return
 	}
 
 	createMentionParams := entities.CreateMentionParams{
 		ID:               ulid.Make().String(),
-		TurnID:           turnRecord.ID,
+		StepID:           stepRecord.ID,
 		ToolCallID:       toolCallId,
 		FromMemberTaskID: a.fromMention.toTask.ID,
 		ToMemberName:     toMemberName,
@@ -245,11 +245,11 @@ func (a *MentionFactory) persistMention(
 
 	a.stream <- ChangeEvent{
 		Kind:        CdcEventKindMention,
-		TurnID:      turnRecord.ID,
+		StepID:      stepRecord.ID,
 		ChannelName: a.fromMention.channelName,
 		Mention: &entities.Mention{
 			ID:               mentionRecord.ID,
-			TurnID:           turnRecord.ID,
+			StepID:           stepRecord.ID,
 			FromMemberTaskID: mentionRecord.FromMemberTaskID,
 			ToMemberName:     mentionRecord.ToMemberName,
 			ToolCallID:       mentionRecord.ToolCallID,
@@ -257,7 +257,7 @@ func (a *MentionFactory) persistMention(
 		},
 	}
 
-	mentionTurnId = turnRecord.ID
+	mentionStepId = stepRecord.ID
 
 	return
 
@@ -265,7 +265,7 @@ func (a *MentionFactory) persistMention(
 
 func (a *Agent) llmResponseToMessage(
 	ctx context.Context,
-	turnId string,
+	stepId string,
 	task entities.Task,
 	logger *zap.Logger,
 ) (
@@ -276,7 +276,7 @@ func (a *Agent) llmResponseToMessage(
 
 	if task.StreamMode {
 		logger.Info("getting LLM chunk response...")
-		llmChunkResponseRecords, er := a.ConversationHistoryDb.Queries.GetLlmChunkResponseByTurn(ctx, turnId)
+		llmChunkResponseRecords, er := a.ConversationHistoryDb.Queries.GetLlmChunkResponseByStep(ctx, stepId)
 		err = er
 		if err != nil {
 			logger.Error("failed to get LLM chunk response", zap.Error(err))
@@ -321,7 +321,7 @@ func (a *Agent) llmResponseToMessage(
 
 	} else {
 		logger.Info("getting LLM response...")
-		llmResponseRecord, er := a.ConversationHistoryDb.Queries.GetLlmResponseByTurn(ctx, turnId)
+		llmResponseRecord, er := a.ConversationHistoryDb.Queries.GetLlmResponseByStep(ctx, stepId)
 		err = er
 		if err != nil {
 			logger.Error("failed to get LLM response", zap.Error(err))
@@ -375,7 +375,7 @@ func setName(
 	}
 }
 
-func turnIntoUserMessage(
+func stepIntoUserMessage(
 	message *openai.ChatCompletionMessageParamUnion,
 ) {
 

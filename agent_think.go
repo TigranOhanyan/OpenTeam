@@ -14,14 +14,14 @@ import (
 
 func (a *Agent) think(
 	ctx context.Context,
-	turnRecord entities.Turn,
+	stepRecord entities.Step,
 	mention Mention,
 	logger *zap.Logger,
 ) (
 	reply Reply,
 	err error,
 ) {
-	logger = logger.With(zap.String("turnId", turnRecord.ID))
+	logger = logger.With(zap.String("stepId", stepRecord.ID))
 
 	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -37,15 +37,15 @@ func (a *Agent) think(
 
 	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
 
-	planningTurnRecord, err := createTurn(ctx, qtx, EventKindPlanning, logger)
+	planningStepRecord, err := createStep(ctx, qtx, EventKindPlanning, logger)
 	if err != nil {
-		logger.Error("failed to create planning turn", zap.Error(err))
+		logger.Error("failed to create planning step", zap.Error(err))
 		return
 	}
 
-	err = linkTurns(ctx, qtx, turnRecord.ID, planningTurnRecord.ID, logger)
+	err = linkSteps(ctx, qtx, stepRecord.ID, planningStepRecord.ID, logger)
 	if err != nil {
-		logger.Error("failed to link turns", zap.Error(err))
+		logger.Error("failed to link steps", zap.Error(err))
 		return
 	}
 
@@ -75,7 +75,7 @@ func (a *Agent) think(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		turnIntoAssistantMessage(&openAiMessage, mention.toMemberName)
+		stepIntoAssistantMessage(&openAiMessage, mention.toMemberName)
 		openAiMessages[i] = openAiMessage
 	}
 
@@ -117,7 +117,7 @@ func (a *Agent) think(
 			createChunkParams := entities.CreateLlmChunkResponsesParams{
 				ID:                  responseId,
 				SequenceNumber:      int64(sequenceNumber),
-				TurnID:              planningTurnRecord.ID,
+				StepID:              planningStepRecord.ID,
 				TaskID:              mention.toTask.ID,
 				OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 			}
@@ -171,7 +171,7 @@ func (a *Agent) think(
 		createLlmResponseParams := entities.CreateLlmResponseParams{
 			ID:             responseId,
 			TaskID:         mention.toTask.ID,
-			TurnID:         planningTurnRecord.ID,
+			StepID:         planningStepRecord.ID,
 			OpenaiResponse: json.RawMessage(llmResponseBytes),
 		}
 
@@ -189,7 +189,7 @@ func (a *Agent) think(
 		return
 	}
 
-	reply, err = a.analyze(ctx, planningTurnRecord, mention, logger)
+	reply, err = a.analyze(ctx, planningStepRecord, mention, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return
@@ -198,7 +198,7 @@ func (a *Agent) think(
 	return
 }
 
-func turnIntoAssistantMessage(
+func stepIntoAssistantMessage(
 	message *openai.ChatCompletionMessageParamUnion,
 	name string,
 ) {

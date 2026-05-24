@@ -25,9 +25,9 @@ const (
 	EventKindActed    EventKind = "acted"
 )
 
-type TurnStatus string
+type StepStatus string
 
 const (
-	TurnStatusPending   TurnStatus = "pending"
-	TurnStatusCompleted TurnStatus = "completed"
+	StepStatusPending   StepStatus = "pending"
+	StepStatusCompleted StepStatus = "completed"
 )

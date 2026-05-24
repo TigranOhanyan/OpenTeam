@@ -30,12 +30,12 @@ func (a *Agent) insertChunk(
 
 		a.ChangeStream <- ChangeEvent{
 			Kind:        CdcEventKindChunk,
-			TurnID:      params.TurnID,
+			StepID:      params.StepID,
 			ChannelName: channelRecord.Name,
 			Chunk: &entities.LlmChunkResponse{
 				ID:                  params.ID,
 				SequenceNumber:      params.SequenceNumber,
-				TurnID:              params.TurnID,
+				StepID:              params.StepID,
 				TaskID:              params.TaskID,
 				OpenaiChunkResponse: params.OpenaiChunkResponse,
 			},
@@ -56,7 +56,7 @@ func (a *Agent) insertAction(
 	}
 
 	if a.ChangeStream != nil {
-		taskRecord, err := qtx.GetTaskByTurn(ctx, params.TurnID)
+		taskRecord, err := qtx.GetTaskByStep(ctx, params.StepID)
 		if err != nil {
 			return err
 		}
@@ -71,11 +71,11 @@ func (a *Agent) insertAction(
 
 		a.ChangeStream <- ChangeEvent{
 			Kind:        CdcEventKindAction,
-			TurnID:      params.TurnID,
+			StepID:      params.StepID,
 			ChannelName: channelRecord.Name,
 			Action: &entities.Action{
 				ID:         params.ID,
-				TurnID:     params.TurnID,
+				StepID:     params.StepID,
 				ToolCallID: params.ToolCallID,
 				Name:       params.Name,
 				Arguments:  params.Arguments,
@@ -97,7 +97,7 @@ func (a *Agent) insertMention(
 	}
 
 	if a.ChangeStream != nil {
-		taskRecord, err := qtx.GetTaskByTurn(ctx, params.TurnID)
+		taskRecord, err := qtx.GetTaskByStep(ctx, params.StepID)
 		if err != nil {
 			return err
 		}
@@ -112,11 +112,11 @@ func (a *Agent) insertMention(
 
 		a.ChangeStream <- ChangeEvent{
 			Kind:        CdcEventKindMention,
-			TurnID:      params.TurnID,
+			StepID:      params.StepID,
 			ChannelName: channelRecord.Name,
 			Mention: &entities.Mention{
 				ID:               params.ID,
-				TurnID:           params.TurnID,
+				StepID:           params.StepID,
 				FromMemberTaskID: params.FromMemberTaskID,
 				ToMemberName:     params.ToMemberName,
 				ToolCallID:       params.ToolCallID,

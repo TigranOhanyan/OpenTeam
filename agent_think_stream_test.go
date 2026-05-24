@@ -83,10 +83,10 @@ func Test_Agent_should_call_llm_when_thinking_in_stream_mode(t *testing.T) {
 	reply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
-	assert.Equal(t, 1, len(reply.replyTurnIds))
-	actualReplyTurnId := reply.replyTurnIds[0]
+	assert.Equal(t, 1, len(reply.replyStepIds))
+	actualReplyStepId := reply.replyStepIds[0]
 
-	actualReplyMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualReplyTurnId)
+	actualReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualReplyStepId)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplyMessage.Visibility, string(VisibilityChannel))
 	actualReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
@@ -164,10 +164,10 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_thinking_in_s
 
 	firstReply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstReply.replyTurnIds))
-	actualFirstReplyTurnId := firstReply.replyTurnIds[0]
+	assert.Equal(t, 1, len(firstReply.replyStepIds))
+	actualFirstReplyStepId := firstReply.replyStepIds[0]
 
-	actualFirstReplyMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualFirstReplyTurnId)
+	actualFirstReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualFirstReplyStepId)
 	assert.NoError(t, err)
 	assert.Equal(t, actualFirstReplyMessage.Visibility, string(VisibilityChannel))
 	actualFirstReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
@@ -218,10 +218,10 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_thinking_in_s
 	secondReply, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, secondReply)
-	assert.Equal(t, 1, len(secondReply.replyTurnIds))
-	actualSecondReplyTurnId := secondReply.replyTurnIds[0]
+	assert.Equal(t, 1, len(secondReply.replyStepIds))
+	actualSecondReplyStepId := secondReply.replyStepIds[0]
 
-	actualSecondReplyMessage, err := teamDb.Queries.GetMessageByTurn(ctx, actualSecondReplyTurnId)
+	actualSecondReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondReplyStepId)
 	assert.NoError(t, err)
 	assert.Equal(t, actualSecondReplyMessage.Visibility, string(VisibilityChannel))
 	actualSecondReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
@@ -304,17 +304,17 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	reply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
-	assert.Equal(t, 1, len(reply.replyTurnIds))
+	assert.Equal(t, 1, len(reply.replyStepIds))
 
-	allTurns, err := teamDb.Queries.GetTurns(ctx)
+	allSteps, err := teamDb.Queries.GetSteps(ctx)
 	assert.NoError(t, err)
 
-	actualTurn1 := allTurns[0]
-	assert.Equal(t, actualTurn1.Kind, string(EventKindMention))
+	actualStep1 := allSteps[0]
+	assert.Equal(t, actualStep1.Kind, string(EventKindMention))
 
-	actualTurn2 := allTurns[1]
-	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
-	actualMessage1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn2.ID)
+	actualStep2 := allSteps[1]
+	assert.Equal(t, actualStep2.Kind, string(EventKindThinking))
+	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep2.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
 	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
@@ -322,9 +322,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
-	actualTurn3 := allTurns[2]
-	assert.Equal(t, actualTurn3.Kind, string(EventKindPlanning))
-	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByTurn(ctx, actualTurn3.ID)
+	actualStep3 := allSteps[2]
+	assert.Equal(t, actualStep3.Kind, string(EventKindPlanning))
+	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
 	actualLlmChunk1Json, err := json.Marshal(actualLlmChunkRecords[0].OpenaiChunkResponse)
@@ -337,9 +337,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.NoError(t, err)
 	assert.JSONEq(t, responseChunk3, string(actualLlmChunk3Json))
 
-	actualTurn4 := allTurns[3]
-	assert.Equal(t, actualTurn4.Kind, string(EventKindReplying))
-	actualReplying1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn4.ID)
+	actualStep4 := allSteps[3]
+	assert.Equal(t, actualStep4.Kind, string(EventKindReplying))
+	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
 	actualReplying1Json, err := json.Marshal(actualReplying1.OpenaiMessage)
@@ -347,7 +347,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	expectedReplying1Json := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
 	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
 
-	assert.Len(t, allTurns, 4)
+	assert.Len(t, allSteps, 4)
 
 }
 
@@ -415,7 +415,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	firstReply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstReply.replyTurnIds))
+	assert.Equal(t, 1, len(firstReply.replyStepIds))
 
 	secondRequestBodyJson :=
 		`{
@@ -459,17 +459,17 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	secondReply, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondReply.replyTurnIds))
+	assert.Equal(t, 1, len(secondReply.replyStepIds))
 
-	allTurns, err := teamDb.Queries.GetTurns(ctx)
+	allSteps, err := teamDb.Queries.GetSteps(ctx)
 	assert.NoError(t, err)
 
-	actualTurn1 := allTurns[0]
-	assert.Equal(t, actualTurn1.Kind, string(EventKindMention))
+	actualStep1 := allSteps[0]
+	assert.Equal(t, actualStep1.Kind, string(EventKindMention))
 
-	actualTurn2 := allTurns[1]
-	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
-	actualMessage1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn2.ID)
+	actualStep2 := allSteps[1]
+	assert.Equal(t, actualStep2.Kind, string(EventKindThinking))
+	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep2.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
 	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
@@ -477,9 +477,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
-	actualTurn3 := allTurns[2]
-	assert.Equal(t, actualTurn3.Kind, string(EventKindPlanning))
-	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByTurn(ctx, actualTurn3.ID)
+	actualStep3 := allSteps[2]
+	assert.Equal(t, actualStep3.Kind, string(EventKindPlanning))
+	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
 	actualLlmChunk1Json, err := json.Marshal(actualLlmChunkRecords[0].OpenaiChunkResponse)
@@ -492,9 +492,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.NoError(t, err)
 	assert.JSONEq(t, firstResponseChunk3, string(actualLlmChunk3Json))
 
-	actualTurn4 := allTurns[3]
-	assert.Equal(t, actualTurn4.Kind, string(EventKindReplying))
-	actualReplying1, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn4.ID)
+	actualStep4 := allSteps[3]
+	assert.Equal(t, actualStep4.Kind, string(EventKindReplying))
+	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
 	actualReplying1Json, err := json.Marshal(actualReplying1.OpenaiMessage)
@@ -502,12 +502,12 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedReplying1Json := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
 	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
 
-	actualTurn5 := allTurns[4]
-	assert.Equal(t, actualTurn5.Kind, string(EventKindMention))
+	actualStep5 := allSteps[4]
+	assert.Equal(t, actualStep5.Kind, string(EventKindMention))
 
-	actualTurn6 := allTurns[5]
-	assert.Equal(t, actualTurn2.Kind, string(EventKindThinking))
-	actualMessage2, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn6.ID)
+	actualStep6 := allSteps[5]
+	assert.Equal(t, actualStep2.Kind, string(EventKindThinking))
+	actualMessage2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep6.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage2.Visibility, string(VisibilityChannel))
 	actualMessage2Json, err := json.Marshal(actualMessage2.OpenaiMessage)
@@ -515,9 +515,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedMessage2Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! How are you?","role":"user"}`)
 	assert.JSONEq(t, expectedMessage2Json, string(actualMessage2Json))
 
-	actualTurn7 := allTurns[6]
-	assert.Equal(t, actualTurn7.Kind, string(EventKindPlanning))
-	actualLlmChunkRecords, err = teamDb.Queries.GetLlmChunkResponseByTurn(ctx, actualTurn7.ID)
+	actualStep7 := allSteps[6]
+	assert.Equal(t, actualStep7.Kind, string(EventKindPlanning))
+	actualLlmChunkRecords, err = teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep7.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 2)
 	actualLlmChunk1Json, err = json.Marshal(actualLlmChunkRecords[0].OpenaiChunkResponse)
@@ -527,9 +527,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.NoError(t, err)
 	assert.JSONEq(t, secondResponseChunk2, string(actualLlmChunk2Json))
 
-	actualTurn8 := allTurns[7]
-	assert.Equal(t, actualTurn4.Kind, string(EventKindReplying))
-	actualReplying2, err := teamDb.Queries.GetMessageByTurn(ctx, actualTurn8.ID)
+	actualStep8 := allSteps[7]
+	assert.Equal(t, actualStep4.Kind, string(EventKindReplying))
+	actualReplying2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep8.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying2.Visibility, string(VisibilityChannel))
 	actualReplying2Json, err := json.Marshal(actualReplying2.OpenaiMessage)
@@ -537,7 +537,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedReplying2Json := `{"name":"Jane","content":"I'm fine, thank you!","role":"user"}`
 	assert.JSONEq(t, expectedReplying2Json, string(actualReplying2Json))
 
-	assert.Len(t, allTurns, 8)
+	assert.Len(t, allSteps, 8)
 
 }
 

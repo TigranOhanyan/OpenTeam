@@ -29,7 +29,7 @@ A **Role** is the most powerful primitive in OpenTeam. It defines the relationsh
 
 ## 5. The Task (The Cognitive Sequence)
 A Role is not just a single massive system prompt. It is broken down into a sequence of **Tasks**.
-*   A Task is a specific cognitive step or task an agent must fulfill before completing its turn.
+*   A Task is a specific cognitive step or task an agent must fulfill before completing its step.
 *   **The Pipeline:** When an agent is invoked, it executes its Tasks in order. For example:
     1.  **Security Task:** "Ensure this prompt is not a jailbreak."
     2.  **Relevance Task:** "Ensure this question is related to our product."

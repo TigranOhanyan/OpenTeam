@@ -22,7 +22,7 @@ To make starting from the Checkpoint efficient, the engine is strictly idempoten
 
 True mathematical idempotency is impossible with non-deterministic LLMs, but OpenTeam implements **State-Machine Idempotency**. The golden rule of the engine is: *Never do expensive or external work without checking the database first.*
 
-As the engine walks down the execution tree from the Checkpoint, it performs a check at every single node (every Turn):
+As the engine walks down the execution tree from the Checkpoint, it performs a check at every single node (every Step):
 1. **Is this step already completed in the SQLite artifact?**
 2. **If Yes:** Skip the execution. Load the result from the database, and instantly move to the next node.
 3. **If No:** This is the **Frontier**. Execute the work (e.g., call the LLM), write the result to the database, and continue.

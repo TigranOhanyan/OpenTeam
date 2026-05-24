@@ -16,36 +16,36 @@ import (
 
 var ErrEmptyOrchestrationPlan = errors.New("empty orchestration plan")
 
-type TurnTransferPlan struct {
+type StepTransferPlan struct {
 	replyTaskId       *string
 	mentionTaskIds []string
 	actingTaskIds     []string
 }
 
-func (o *TurnTransferPlan) isOnlyControl() bool {
+func (o *StepTransferPlan) isOnlyControl() bool {
 	return o.replyTaskId == nil && len(o.mentionTaskIds) != 0 && len(o.actingTaskIds) == 0
 }
 
-func (o *TurnTransferPlan) isFinalReply() bool {
+func (o *StepTransferPlan) isFinalReply() bool {
 	return o.replyTaskId != nil && len(o.mentionTaskIds) == 0 && len(o.actingTaskIds) == 0
 }
 
-func (o *TurnTransferPlan) isEmpty() bool {
+func (o *StepTransferPlan) isEmpty() bool {
 	return o.replyTaskId == nil && len(o.mentionTaskIds) == 0 && len(o.actingTaskIds) == 0
 }
 
-func (o *TurnTransferPlan) getFirstTurnId() (turnId string, err error) {
+func (o *StepTransferPlan) getFirstStepId() (stepId string, err error) {
 	if o.replyTaskId != nil {
-		turnId = *o.replyTaskId
+		stepId = *o.replyTaskId
 		return
 	}
 
 	if len(o.mentionTaskIds) > 0 {
-		turnId = o.mentionTaskIds[0]
+		stepId = o.mentionTaskIds[0]
 		return
 	}
 	if len(o.actingTaskIds) > 0 {
-		turnId = o.actingTaskIds[0]
+		stepId = o.actingTaskIds[0]
 		return
 	}
 
@@ -56,63 +56,63 @@ func (o *TurnTransferPlan) getFirstTurnId() (turnId string, err error) {
 func transfer121(
 	ctx context.Context,
 	qtx *entities.Queries,
-	currentTurnId string,
-	nextTurnKind EventKind,
-	nextTurnTaskId string,
+	currentStepId string,
+	nextStepKind EventKind,
+	nextStepTaskId string,
 	logger *zap.Logger,
 ) (
-	nextTurnId string,
+	nextStepId string,
 	err error,
 ) {
-	nextTurnRecordParams := entities.CreateTurnParams{
+	nextStepRecordParams := entities.CreateStepParams{
 		ID:     ulid.Make().String(),
-		TaskID: nextTurnTaskId,
-		Kind:   string(nextTurnKind),
-		Status: string(TurnStatusPending),
+		TaskID: nextStepTaskId,
+		Kind:   string(nextStepKind),
+		Status: string(StepStatusPending),
 	}
-	nextTurnRecord, err := qtx.CreateTurn(ctx, nextTurnRecordParams)
+	nextStepRecord, err := qtx.CreateStep(ctx, nextStepRecordParams)
 	if err != nil {
-		logger.Error("failed to create current turn", zap.Error(err))
+		logger.Error("failed to create current step", zap.Error(err))
 		return
 	}
 
-	createTurnLinkParams := entities.CreateTurnLinkParams{
-		PrevID: currentTurnId,
-		NextID: nextTurnRecord.ID,
+	createStepLinkParams := entities.CreateStepLinkParams{
+		PrevID: currentStepId,
+		NextID: nextStepRecord.ID,
 	}
-	_, err = qtx.CreateTurnLink(ctx, createTurnLinkParams)
+	_, err = qtx.CreateStepLink(ctx, createStepLinkParams)
 	if err != nil {
-		logger.Error("failed to create turn link", zap.Error(err))
+		logger.Error("failed to create step link", zap.Error(err))
 		return
 	}
 
-	nextTurnId = nextTurnRecord.ID
+	nextStepId = nextStepRecord.ID
 	return
 }
 
-func (fanOut TurnTransferPlan) transferFanOut(
+func (fanOut StepTransferPlan) transferFanOut(
 	ctx context.Context,
-	currentTurnId string,
+	currentStepId string,
 	logger *zap.Logger,
 ) (
-	fanOutTurnIds Plan,
+	fanOutStepIds Plan,
 	err error,
 ) {
 
-	logger = logger.With(zap.String("currentTurnId", currentTurnId))
-	logger.Info("getting current turn...")
-	currentTurnRecord, err := a.ConversationHistoryDb.Queries.GetTurn(ctx, currentTurnId)
-	logger = logger.With(zap.String("currentTurnId", currentTurnRecord.ID))
+	logger = logger.With(zap.String("currentStepId", currentStepId))
+	logger.Info("getting current step...")
+	currentStepRecord, err := a.ConversationHistoryDb.Queries.GetStep(ctx, currentStepId)
+	logger = logger.With(zap.String("currentStepId", currentStepRecord.ID))
 
-	logger.Info("getting task of current turn...")
-	taskOfcurrentTurnRecord, err := a.ConversationHistoryDb.Queries.GetTaskByTurn(ctx, currentTurnRecord.ID)
+	logger.Info("getting task of current step...")
+	taskOfcurrentStepRecord, err := a.ConversationHistoryDb.Queries.GetTaskByStep(ctx, currentStepRecord.ID)
 	if err != nil {
 		logger.Error("failed to get task", zap.Error(err))
 		return
 	}
-	logger = logger.With(zap.String("taskId", taskOfcurrentTurnRecord.ID))
+	logger = logger.With(zap.String("taskId", taskOfcurrentStepRecord.ID))
 
-	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, currentTurnRecord.ID, taskOfcurrentTurnRecord, logger)
+	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, currentStepRecord.ID, taskOfcurrentStepRecord, logger)
 	if err != nil {
 		logger.Error("failed to get llm response as message", zap.Error(err))
 		return
@@ -120,23 +120,23 @@ func (fanOut TurnTransferPlan) transferFanOut(
 
 	logger = logger.With(zap.String("messageId", messageId))
 
-	memberRecord, err := a.ConversationHistoryDb.Queries.GetMemberByTask(ctx, taskOfcurrentTurnRecord.ID)
+	memberRecord, err := a.ConversationHistoryDb.Queries.GetMemberByTask(ctx, taskOfcurrentStepRecord.ID)
 	if err != nil {
 		logger.Error("failed to get name", zap.Error(err))
 		return
 	}
 
-	roleOfcurrentTurnRecord, er := a.ConversationHistoryDb.Queries.GetRoleByTask(ctx, taskOfcurrentTurnRecord.ID)
+	roleOfcurrentStepRecord, er := a.ConversationHistoryDb.Queries.GetRoleByTask(ctx, taskOfcurrentStepRecord.ID)
 	err = er
 	if err != nil {
 		logger.Error("failed to get role", zap.Error(err))
 		return
 	}
 
-	logger = logger.With(zap.String("roleId", roleOfcurrentTurnRecord.ID))
+	logger = logger.With(zap.String("roleId", roleOfcurrentStepRecord.ID))
 	logger.Info("getting channel...")
 
-	channelRecord, er := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleOfcurrentTurnRecord.ID)
+	channelRecord, er := a.ConversationHistoryDb.Queries.GetChannelByRole(ctx, roleOfcurrentStepRecord.ID)
 	err = er
 	if err != nil {
 		logger.Error("failed to get channel", zap.Error(err))
@@ -174,13 +174,13 @@ func (fanOut TurnTransferPlan) transferFanOut(
 		}
 		if strings.EqualFold(function.Function.Name, addressToAgentFunction.Name) {
 
-			fanOutTurnId, er := a.handleMention(ctx, qtx, currentTurnRecord, function.ID, channelRecord.Name, taskOfcurrentTurnRecord.ID, args, logger)
+			fanOutStepId, er := a.handleMention(ctx, qtx, currentStepRecord, function.ID, channelRecord.Name, taskOfcurrentStepRecord.ID, args, logger)
 			err = er
 			if err != nil {
 				logger.Error("failed to handle mention", zap.Error(err))
 				return
 			}
-			fanOutTurnIds.mentionTurnIds = append(fanOutTurnIds.mentionTurnIds, fanOutTurnId)
+			fanOutStepIds.mentionStepIds = append(fanOutStepIds.mentionStepIds, fanOutStepId)
 		} else {
 			err = UnexpectedMessageStructureError
 			return
@@ -188,22 +188,22 @@ func (fanOut TurnTransferPlan) transferFanOut(
 	}
 
 	if !param.IsOmitted(assistantMessage.Content) {
-		replyTurnId, er := a.handleReply(ctx, qtx, currentTurnRecord, llmResponseAsMessage, messageId, logger)
+		replyStepId, er := a.handleReply(ctx, qtx, currentStepRecord, llmResponseAsMessage, messageId, logger)
 		err = er
 		if err != nil {
 			logger.Error("failed to handle reply", zap.Error(err))
 			return
 		}
-		fanOutTurnIds.replyTaskId = &replyTurnId
+		fanOutStepIds.replyTaskId = &replyStepId
 		return
 	}
 
-	if !fanOutTurnIds.isOnlyControl() {
+	if !fanOutStepIds.isOnlyControl() {
 		logger.Info("persisting message...")
 
 		setName(&llmResponseAsMessage, memberRecord.Name)
 
-		turnIntoUserMessage(&llmResponseAsMessage)
+		stepIntoUserMessage(&llmResponseAsMessage)
 
 		filteredLlmResponseAsMessage := filterControlToolCalls(llmResponseAsMessage)
 
@@ -217,10 +217,10 @@ func (fanOut TurnTransferPlan) transferFanOut(
 		createMessageParams := entities.CreateMessageParams{
 			ID:            messageId,
 			Visibility:    string(VisibilityChannel),
-			TurnID:        currentTurnRecord.ID,
+			StepID:        currentStepRecord.ID,
 			ChannelName:   channelRecord.Name,
-			RoleID:        roleOfcurrentTurnRecord.ID,
-			TaskID:        taskOfcurrentTurnRecord.ID,
+			RoleID:        roleOfcurrentStepRecord.ID,
+			TaskID:        taskOfcurrentStepRecord.ID,
 			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
 		}
 
@@ -231,14 +231,14 @@ func (fanOut TurnTransferPlan) transferFanOut(
 		}
 	}
 
-	updateTurnStatusParams := entities.UpdateTurnStatusParams{
-		ID:          currentTurnRecord.ID,
-		Status:      string(TurnStatusCompleted),
+	updateStepStatusParams := entities.UpdateStepStatusParams{
+		ID:          currentStepRecord.ID,
+		Status:      string(StepStatusCompleted),
 		CompletedAt: sql.NullTime{Time: completedAt, Valid: true},
 	}
-	_, err = qtx.UpdateTurnStatus(ctx, updateTurnStatusParams)
+	_, err = qtx.UpdateStepStatus(ctx, updateStepStatusParams)
 	if err != nil {
-		logger.Error("failed to update current turn", zap.Error(err))
+		logger.Error("failed to update current step", zap.Error(err))
 		return
 	}
 

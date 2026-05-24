@@ -9,7 +9,7 @@ Relying on the LLM to use "Protocol Tools" (`Task-Pass`, `Liaison`, `Ask-Member`
 
 ## 2. Infinite Loops and Deadlocks
 Because agents are given the "steering wheel" and can autonomously wake each other up (via `ask_member`), there is a high risk of infinite conversational loops. For example, Agent A asks Agent B for help, Agent B gets confused and asks Agent A for clarification, repeating endlessly.
-*   **Mitigation:** The centralized engine will need strict circuit breakers, max-turn limits per request, and loop detection mechanisms to prevent runaway LLM costs and stalled requests.
+*   **Mitigation:** The centralized engine will need strict circuit breakers, max-step limits per request, and loop detection mechanisms to prevent runaway LLM costs and stalled requests.
 *   **Discussion / Counter-Argument:** Infinite loops are also possible in DAGs since they can have cycles (e.g., each liaison has other agents as its children, forming complex graphs). Just like in a DAG, the OpenTeam framework will implement circuit breakers as "emergency exits". For example, if the token limit is reached for a specific request, an agent acting as a liaison would be programmatically forbidden from entering other channels and forced to respond directly in its current context, as if it weren't a liaison.
 
 ## 3. LLM Tool-Calling Reliability

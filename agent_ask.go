@@ -19,7 +19,7 @@ const (
 
 type ChangeEvent struct {
 	Kind        CdcEventKind
-	TurnID      string
+	StepID      string
 	ChannelName string
 	Action      *entities.Action
 	Chunk       *entities.LlmChunkResponse
@@ -104,17 +104,17 @@ func (a *Agent) Ask(
 			return
 		}
 
-		mentionTurnRecord, er := createTurn(ctx, qtx, EventKindMention, logger)
+		mentionStepRecord, er := createStep(ctx, qtx, EventKindMention, logger)
 		err = er
 		if err != nil {
-			logger.Error("failed to create mention turn", zap.Error(err))
+			logger.Error("failed to create mention step", zap.Error(err))
 			return
 		}
 
 		toolCallId := ulid.Make().String()
 		createMentionParams := entities.CreateMentionParams{
 			ID:               ulid.Make().String(),
-			TurnID:           mentionTurnRecord.ID,
+			StepID:           mentionStepRecord.ID,
 			ToolCallID:       toolCallId,
 			FromMemberTaskID: fromTaskRecord.ID,
 			ToMemberName:     toMemberRecord.Name,
@@ -125,7 +125,7 @@ func (a *Agent) Ask(
 		if err != nil {
 			return
 		}
-		orchestrationPlan.mentionTurnIds = append(orchestrationPlan.mentionTurnIds, mentionTurnRecord.ID)
+		orchestrationPlan.mentionStepIds = append(orchestrationPlan.mentionStepIds, mentionStepRecord.ID)
 	}
 
 	err = trx.Commit()
@@ -134,15 +134,15 @@ func (a *Agent) Ask(
 		return
 	}
 
-	for _, mentionTurnId := range orchestrationPlan.mentionTurnIds {
-		mentionReply, er := a.reply(ctx, mentionTurnId, logger) // short circuit if the reply requries tool calls
+	for _, mentionStepId := range orchestrationPlan.mentionStepIds {
+		mentionReply, er := a.reply(ctx, mentionStepId, logger) // short circuit if the reply requries tool calls
 		err = er
 		if err != nil {
 			logger.Error("failed to reply to mention", zap.Error(err))
 			return
 		}
 		reply.actionIds = append(reply.actionIds, mentionReply.actionIds...)
-		reply.replyTurnIds = append(reply.replyTurnIds, mentionReply.replyTurnIds...)
+		reply.replyStepIds = append(reply.replyStepIds, mentionReply.replyStepIds...)
 	}
 
 	return

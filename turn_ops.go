@@ -10,46 +10,46 @@ import (
 	"go.uber.org/zap"
 )
 
-func linkTurns(
+func linkSteps(
 	ctx context.Context,
 	qtx *entities.Queries,
-	prevTurnId string,
-	nextTurnId string,
+	prevStepId string,
+	nextStepId string,
 	logger *zap.Logger,
 ) (
 	err error,
 ) {
 	linkedAt := time.Now().UTC()
-	createTurnLinkParams := entities.CreateTurnLinkParams{
-		PrevID:   prevTurnId,
-		NextID:   nextTurnId,
+	createStepLinkParams := entities.CreateStepLinkParams{
+		PrevID:   prevStepId,
+		NextID:   nextStepId,
 		LinkedAt: sql.NullTime{Time: linkedAt, Valid: true},
 	}
-	_, err = qtx.CreateTurnLink(ctx, createTurnLinkParams)
+	_, err = qtx.CreateStepLink(ctx, createStepLinkParams)
 	if err != nil {
-		logger.Error("failed to create turn link", zap.Error(err))
+		logger.Error("failed to create step link", zap.Error(err))
 		return
 	}
 
 	return
 }
 
-func createTurn(
+func createStep(
 	ctx context.Context,
 	qtx *entities.Queries,
-	turnKind EventKind,
+	stepKind EventKind,
 	logger *zap.Logger,
 ) (
-	turnRecord entities.Turn,
+	stepRecord entities.Step,
 	err error,
 ) {
-	turnRecordParams := entities.CreateTurnParams{
+	stepRecordParams := entities.CreateStepParams{
 		ID:   ulid.Make().String(),
-		Kind: string(turnKind),
+		Kind: string(stepKind),
 	}
-	turnRecord, err = qtx.CreateTurn(ctx, turnRecordParams)
+	stepRecord, err = qtx.CreateStep(ctx, stepRecordParams)
 	if err != nil {
-		logger.Error("failed to create current turn", zap.Error(err))
+		logger.Error("failed to create current step", zap.Error(err))
 		return
 	}
 

@@ -14,14 +14,14 @@ import (
 
 func (a *Agent) reply(
 	ctx context.Context,
-	turnID string,
+	stepID string,
 	logger *zap.Logger,
 ) (
 	reply Reply,
 	err error,
 ) {
-	logger = logger.With(zap.String("currentTurnId", turnID))
-	logger.Info("getting current turn...")
+	logger = logger.With(zap.String("currentStepId", stepID))
+	logger.Info("getting current step...")
 
 	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -37,19 +37,19 @@ func (a *Agent) reply(
 
 	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
 
-	turnRecord, err := qtx.GetTurn(ctx, turnID)
+	stepRecord, err := qtx.GetStep(ctx, stepID)
 	if err != nil {
-		logger.Error("failed to get turn", zap.Error(err))
+		logger.Error("failed to get step", zap.Error(err))
 		return
 	}
 
-	mention, err := reconstituteMention(ctx, qtx, turnRecord, logger)
+	mention, err := reconstituteMention(ctx, qtx, stepRecord, logger)
 	if err != nil {
 		logger.Error("failed to reconstitute replying context", zap.Error(err))
 		return
 	}
 
-	thinkingTurnRecord, err := mention.persistMentionMessage(ctx, qtx, turnRecord, logger)
+	thinkingStepRecord, err := mention.persistMentionMessage(ctx, qtx, stepRecord, logger)
 	if err != nil {
 		logger.Error("failed to persist mention message", zap.Error(err))
 		return
@@ -61,7 +61,7 @@ func (a *Agent) reply(
 		return
 	}
 
-	reply, err = a.think(ctx, thinkingTurnRecord, mention, logger)
+	reply, err = a.think(ctx, thinkingStepRecord, mention, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return
@@ -72,7 +72,7 @@ func (a *Agent) reply(
 
 type Mention struct {
 	mentionID      string
-	turnID         string
+	stepID         string
 	channelName    string
 	fromMemberName string
 	fromRoleID     string
@@ -86,22 +86,22 @@ type Mention struct {
 func (a Mention) persistMentionMessage(
 	ctx context.Context,
 	qtx *entities.Queries,
-	turnRecord entities.Turn,
+	stepRecord entities.Step,
 	logger *zap.Logger,
 ) (
-	thinkingTurnRecord entities.Turn,
+	thinkingStepRecord entities.Step,
 	err error,
 ) {
 
-	thinkingTurnRecord, err = createTurn(ctx, qtx, EventKindThinking, logger)
+	thinkingStepRecord, err = createStep(ctx, qtx, EventKindThinking, logger)
 	if err != nil {
-		logger.Error("failed to create thinking turn", zap.Error(err))
+		logger.Error("failed to create thinking step", zap.Error(err))
 		return
 	}
 
-	err = linkTurns(ctx, qtx, turnRecord.ID, thinkingTurnRecord.ID, logger)
+	err = linkSteps(ctx, qtx, stepRecord.ID, thinkingStepRecord.ID, logger)
 	if err != nil {
-		logger.Error("failed to link turns", zap.Error(err))
+		logger.Error("failed to link steps", zap.Error(err))
 		return
 	}
 
@@ -126,7 +126,7 @@ func (a Mention) persistMentionMessage(
 		ID:            ulid.Make().String(),
 		OpenaiMessage: json.RawMessage(openAiMessageBytes),
 		Visibility:    string(VisibilityChannel),
-		TurnID:        thinkingTurnRecord.ID,
+		StepID:        thinkingStepRecord.ID,
 		ChannelName:   a.channelName,
 		RoleID:        a.toRoleID,
 		TaskID:        a.toTask.ID,
@@ -143,16 +143,16 @@ func (a Mention) persistMentionMessage(
 func reconstituteMention(
 	ctx context.Context,
 	qtx *entities.Queries,
-	turnRecord entities.Turn,
+	stepRecord entities.Step,
 	logger *zap.Logger,
 ) (
 	mention Mention,
 	err error,
 ) {
 
-	logger = logger.With(zap.String("turnId", turnRecord.ID))
+	logger = logger.With(zap.String("stepId", stepRecord.ID))
 
-	mentionRecord, err := qtx.GetMentionByTurn(ctx, turnRecord.ID)
+	mentionRecord, err := qtx.GetMentionByStep(ctx, stepRecord.ID)
 	if err != nil {
 		logger.Error("failed to get mention", zap.Error(err))
 		return
@@ -203,7 +203,7 @@ func reconstituteMention(
 
 	mention = Mention{
 		mentionID:      mentionRecord.ID,
-		turnID:         turnRecord.ID,
+		stepID:         stepRecord.ID,
 		channelName:    channelRecord.Name,
 		fromMemberName: fromMemberRecord.Name,
 		fromRoleID:     fromRoleRecord.ID,
@@ -218,6 +218,6 @@ func reconstituteMention(
 }
 
 type Reply struct {
-	replyTurnIds []string
+	replyStepIds []string
 	actionIds    []string
 }

@@ -13,7 +13,7 @@ In a typical ORM-driven system, generating SQL schemas from Go code is convenien
 If the schema is derived from code:
 
 - A change in Go structs can accidentally invalidate persisted SQLite artifacts.
-- Old conversations may stop working, because the engine depends on loading their previous SQLite state on every turn.
+- Old conversations may stop working, because the engine depends on loading their previous SQLite state on every step.
 - Backward compatibility becomes coupled to application refactors.
 - The artifact format becomes implicit rather than explicit.
 
