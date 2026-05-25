@@ -80,7 +80,9 @@ func Test_Agent_should_call_llm_when_reasoning_in_stream_mode(t *testing.T) {
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	reply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	assert.NoError(t, err)
+	reply, err := agent.Run(ctx, askingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
 	assert.Equal(t, 1, len(reply.replyStepIds))
@@ -162,8 +164,12 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstReply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
+	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
+	assert.NoError(t, err)
+	assert.NotNil(t, firstReply)
+
 	assert.Equal(t, 1, len(firstReply.replyStepIds))
 	actualFirstReplyStepId := firstReply.replyStepIds[0]
 
@@ -215,8 +221,9 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondReply, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
+	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
 	assert.NotNil(t, secondReply)
 	assert.Equal(t, 1, len(secondReply.replyStepIds))
 	actualSecondReplyStepId := secondReply.replyStepIds[0]
@@ -301,7 +308,8 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	reply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	reply, err := agent.Run(ctx, askingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
 	assert.Equal(t, 1, len(reply.replyStepIds))
@@ -413,7 +421,8 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstReply, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(firstReply.replyStepIds))
 
@@ -457,7 +466,8 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondReply, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(secondReply.replyStepIds))
 

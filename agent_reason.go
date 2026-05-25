@@ -12,26 +12,25 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *Agent) reason(
+func (a *agent) reason(
 	ctx context.Context,
-	stepRecord entities.Step,
-	mention Mention,
+	actiongOrObservingStepRecord entities.Step,
 	logger *zap.Logger,
 ) (
 	reply Reply,
 	err error,
 ) {
-	logger = logger.With(zap.String("stepId", stepRecord.ID))
+	logger = logger.With(zap.String("stepId", actiongOrObservingStepRecord.ID))
 
-	logger = logger.With(zap.String("channelId", mention.channelName))
+	logger = logger.With(zap.String("channelId", a.channel.Name))
 	logger.Info("getting messages...")
 
 	getContextMessagesParams := entities.GetContextMessagesParams{
-		TaskID:      mention.toTask.ID,
-		RoleID:      mention.toRoleID,
-		ChannelName: mention.channelName,
+		TaskID:      a.task.ID,
+		RoleID:      a.role.ID,
+		ChannelName: a.channel.Name,
 	}
-	messageRecords, err := a.ConversationHistoryDb.Queries.GetContextMessages(ctx, getContextMessagesParams)
+	messageRecords, err := a.runtime.ConversationHistoryDb.Queries.GetContextMessages(ctx, getContextMessagesParams)
 	if err != nil {
 		logger.Error("failed to get messages", zap.Error(err))
 		return
@@ -49,12 +48,12 @@ func (a *Agent) reason(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		turnIntoAssistantMessage(&openAiMessage, mention.toMemberName)
+		turnIntoAssistantMessage(&openAiMessage, a.member.Name)
 		openAiMessages[i] = openAiMessage
 	}
 
 	chatParams := openai.ChatCompletionNewParams{
-		Model:       mention.toTask.Model,
+		Model:       a.task.Model,
 		Messages:    openAiMessages,
 		N:           param.NewOpt(AmountOfChoices),
 		Temperature: param.NewOpt(Temperature),
@@ -63,21 +62,21 @@ func (a *Agent) reason(
 
 	var reasoningStepRecord entities.Step
 
-	if mention.toTask.StreamMode {
-		reasoningStepRecord, err = a.reasonInStreamMode(ctx, mention, stepRecord, chatParams, logger)
+	if a.task.StreamMode {
+		reasoningStepRecord, err = a.reasonInStreamMode(ctx, actiongOrObservingStepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in stream mode", zap.Error(err))
 			return
 		}
 	} else {
-		reasoningStepRecord, err = a.reasonInOneShotMode(ctx, mention, stepRecord, chatParams, logger)
+		reasoningStepRecord, err = a.reasonInOneShotMode(ctx, actiongOrObservingStepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in one shot mode", zap.Error(err))
 			return
 		}
 	}
 
-	reply, err = a.act(ctx, reasoningStepRecord, mention, logger)
+	reply, err = a.act(ctx, reasoningStepRecord, logger)
 	if err != nil {
 		logger.Error("failed to act", zap.Error(err))
 		return
@@ -86,10 +85,9 @@ func (a *Agent) reason(
 	return
 }
 
-func (a *Agent) reasonInStreamMode(
+func (a *agent) reasonInStreamMode(
 	ctx context.Context,
-	mention Mention,
-	mentionStepRecord entities.Step,
+	actiongOrObservingStepRecord entities.Step,
 	chatParams openai.ChatCompletionNewParams,
 	logger *zap.Logger,
 ) (
@@ -102,11 +100,11 @@ func (a *Agent) reasonInStreamMode(
 
 	logger.Info("calling LLM in stream mode...")
 	// 1. Start the stream
-	stream := a.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
+	stream := a.runtime.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
 	defer stream.Close()
 
 	// 2. Begin a transaction
-	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	trx, err := a.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("failed to begin transaction", zap.Error(err))
 		return
@@ -118,17 +116,17 @@ func (a *Agent) reasonInStreamMode(
 		}
 	}()
 
-	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+	qtx := a.runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
 	// 3. Create a reasoning step
-	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, logger)
+	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, &a.runRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to create reasoning step", zap.Error(err))
 		return
 	}
 
 	// 4. Link the mention step to the reasoning step
-	err = linkSteps(ctx, qtx, mentionStepRecord.ID, reasoningStepRecord.ID, logger)
+	err = linkSteps(ctx, qtx, actiongOrObservingStepRecord.ID, reasoningStepRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to link steps", zap.Error(err))
 		return
@@ -155,10 +153,10 @@ func (a *Agent) reasonInStreamMode(
 			ID:                  responseId,
 			SequenceNumber:      int64(sequenceNumber),
 			StepID:              reasoningStepRecord.ID,
-			TaskID:              mention.toTask.ID,
+			TaskID:              a.task.ID,
 			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 		}
-		err = a.insertChunk(ctx, qtx, createChunkParams, logger)
+		err = a.runtime.insertChunk(ctx, qtx, createChunkParams, logger)
 		if err != nil {
 			logger.Error("failed to insert chunk", zap.Error(err))
 			return
@@ -181,10 +179,9 @@ func (a *Agent) reasonInStreamMode(
 
 }
 
-func (a *Agent) reasonInOneShotMode(
+func (a *agent) reasonInOneShotMode(
 	ctx context.Context,
-	mention Mention,
-	mentionStepRecord entities.Step,
+	actiongOrObservingStepRecord entities.Step,
 	chatParams openai.ChatCompletionNewParams,
 	logger *zap.Logger,
 ) (
@@ -196,7 +193,7 @@ func (a *Agent) reasonInOneShotMode(
 	logger = logger.With(zap.String("responseId", responseId))
 	logger.Info("calling LLM in one shot...")
 
-	maybeLlmResponse, er := a.LlmClient.Chat.Completions.New(ctx, chatParams)
+	maybeLlmResponse, er := a.runtime.LlmClient.Chat.Completions.New(ctx, chatParams)
 	err = er
 	if err != nil {
 		logger.Error("failed to call LLM", zap.Error(err))
@@ -226,7 +223,7 @@ func (a *Agent) reasonInOneShotMode(
 		return
 	}
 
-	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	trx, err := a.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("failed to begin transaction", zap.Error(err))
 		return
@@ -238,15 +235,15 @@ func (a *Agent) reasonInOneShotMode(
 		}
 	}()
 
-	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+	qtx := a.runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
-	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, logger)
+	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, &a.runRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to create reasoning step", zap.Error(err))
 		return
 	}
 
-	err = linkSteps(ctx, qtx, mentionStepRecord.ID, reasoningStepRecord.ID, logger)
+	err = linkSteps(ctx, qtx, actiongOrObservingStepRecord.ID, reasoningStepRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to link steps", zap.Error(err))
 		return
@@ -254,7 +251,7 @@ func (a *Agent) reasonInOneShotMode(
 
 	createLlmResponseParams := entities.CreateLlmResponseParams{
 		ID:             responseId,
-		TaskID:         mention.toTask.ID,
+		TaskID:         a.task.ID,
 		StepID:         reasoningStepRecord.ID,
 		OpenaiResponse: json.RawMessage(llmResponseBytes),
 	}

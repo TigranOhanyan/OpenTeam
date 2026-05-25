@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openteam/entities"
@@ -17,33 +16,19 @@ import (
 var UnexpectedMessageStructureError = errors.New("unexpected message structure")
 var InvalidMentionArgumentsError = errors.New("invalid mention arguments")
 
-type Plan struct {
-	mentionStepIds []string
-	actingStepIds  []string
-}
-
-func (o *Plan) isOnlyControl() bool {
-	return len(o.mentionStepIds) != 0 && len(o.actingStepIds) == 0
-}
-
-func (o *Plan) isFinalReply() bool {
-	return len(o.mentionStepIds) == 0 && len(o.actingStepIds) == 0
-}
-
-func (a *Agent) act(
+func (agent *agent) act(
 	ctx context.Context,
-	stepRecord entities.Step,
-	mention Mention,
+	reasoningStepRecord entities.Step,
 	logger *zap.Logger,
 ) (
 	reply Reply,
 	err error,
 ) {
 
-	logger = logger.With(zap.String("stepId", stepRecord.ID))
+	logger = logger.With(zap.String("stepId", reasoningStepRecord.ID))
 	logger.Info("getting current step...")
 
-	trx, err := a.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	trx, err := agent.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("failed to begin transaction", zap.Error(err))
 		return
@@ -54,9 +39,21 @@ func (a *Agent) act(
 			trx.Rollback()
 		}
 	}()
-	qtx := a.ConversationHistoryDb.Queries.WithTx(trx)
+	qtx := agent.runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
-	llmResponseAsMessage, messageId, err := a.llmResponseToMessage(ctx, stepRecord.ID, mention.toTask, logger)
+	actingStepRecord, err := createStep(ctx, qtx, EventKindActing, &agent.runRecord.ID, logger)
+	if err != nil {
+		logger.Error("failed to create acting step", zap.Error(err))
+		return
+	}
+
+	err = linkSteps(ctx, qtx, reasoningStepRecord.ID, actingStepRecord.ID, logger)
+	if err != nil {
+		logger.Error("failed to link steps", zap.Error(err))
+		return
+	}
+
+	llmResponseAsMessage, messageId, err := agent.runtime.llmResponseToMessage(ctx, actingStepRecord.ID, agent.task, logger)
 	if err != nil {
 		logger.Error("failed to get llm response as message", zap.Error(err))
 		return
@@ -70,12 +67,6 @@ func (a *Agent) act(
 	}
 
 	assistantMessage := llmResponseAsMessage.OfAssistant
-
-	mentionFactory := MentionFactory{
-		fromMention: mention,
-		qtx:         qtx,
-		stream:      a.ChangeStream,
-	}
 
 	orchestrationPlan := Plan{}
 
@@ -92,14 +83,15 @@ func (a *Agent) act(
 		}
 		if strings.EqualFold(function.Function.Name, mentionMemberFunction.Name) {
 
-			mentionStepId, er := mentionFactory.persistMention(ctx, args, function.ID, logger)
+			mentionOrchestrationPlan, er := agent.persistMention(ctx, qtx, args, function.ID, actingStepRecord, logger)
 			err = er
 			if err != nil {
 				logger.Error("failed to persist mention", zap.Error(err))
 				return
 			}
 
-			orchestrationPlan.mentionStepIds = append(orchestrationPlan.mentionStepIds, mentionStepId)
+			orchestrationPlan.mentionRecords = append(orchestrationPlan.mentionRecords, mentionOrchestrationPlan.mentionRecords...)
+			orchestrationPlan.actingStepIds = append(orchestrationPlan.actingStepIds, mentionOrchestrationPlan.actingStepIds...)
 		} else {
 			err = UnexpectedMessageStructureError
 			return
@@ -109,19 +101,7 @@ func (a *Agent) act(
 	if !orchestrationPlan.isOnlyControl() {
 		logger.Info("persisting message...")
 
-		actingStepRecord, er := createStep(ctx, qtx, EventKindActing, logger)
-		err = er
-		if err != nil {
-			logger.Error("failed to create acting step", zap.Error(err))
-			return
-		}
-		err = linkSteps(ctx, qtx, stepRecord.ID, actingStepRecord.ID, logger)
-		if err != nil {
-			logger.Error("failed to link steps", zap.Error(err))
-			return
-		}
-
-		setName(&llmResponseAsMessage, mention.toMemberName)
+		setName(&llmResponseAsMessage, agent.member.Name)
 
 		turnIntoUserMessage(&llmResponseAsMessage)
 
@@ -138,9 +118,9 @@ func (a *Agent) act(
 			ID:            messageId,
 			Visibility:    string(VisibilityChannel),
 			StepID:        actingStepRecord.ID,
-			ChannelName:   mention.channelName,
-			RoleID:        mention.toRoleID,
-			TaskID:        mention.toTask.ID,
+			ChannelName:   agent.channel.Name,
+			RoleID:        agent.role.ID,
+			TaskID:        agent.task.ID,
 			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
 		}
 
@@ -163,25 +143,22 @@ func (a *Agent) act(
 		return
 	}
 
-	for _, mentionStepId := range orchestrationPlan.mentionStepIds {
-		mentionReply, er := a.observe(ctx, mentionStepId, logger) // short circuit if the reply requries tool calls
+	for _, mentionRecord := range orchestrationPlan.mentionRecords {
+		nextAgent, er := agent.runtime.createAgent(ctx, mentionRecord, logger)
 		err = er
 		if err != nil {
-			logger.Error("failed to observe mention", zap.Error(err))
+			logger.Error("failed to create agent", zap.Error(err))
 			return
 		}
-		reply.actionIds = append(reply.actionIds, mentionReply.actionIds...)
+
+		reply, err = nextAgent.reAct(ctx, logger)
+		if err != nil {
+			logger.Error("failed to reAct mention", zap.Error(err))
+			return
+		}
 	}
 
-	observingStepRecord, err := createStep(ctx, qtx, EventKindObserving, logger)
-
-	err = linkSteps(ctx, qtx, stepRecord.ID, observingStepRecord.ID, logger)
-	if err != nil {
-		logger.Error("failed to link steps", zap.Error(err))
-		return
-	}
-
-	reply, err = a.reason(ctx, observingStepRecord, mention, logger)
+	reply, err = agent.reason(ctx, actingStepRecord, logger)
 	if err != nil {
 		logger.Error("failed to think", zap.Error(err))
 		return
@@ -190,19 +167,15 @@ func (a *Agent) act(
 
 }
 
-type MentionFactory struct {
-	fromMention Mention
-	qtx         *entities.Queries
-	stream      chan<- ChangeEvent
-}
-
-func (a *MentionFactory) persistMention(
+func (agent *agent) persistMention(
 	ctx context.Context,
+	qtx *entities.Queries,
 	arguments map[string]interface{},
 	toolCallId string,
+	sourceStep entities.Step,
 	logger *zap.Logger,
 ) (
-	mentionStepId string,
+	orchestrationPlan Plan,
 	err error,
 ) {
 
@@ -217,53 +190,51 @@ func (a *MentionFactory) persistMention(
 		return
 	}
 
-	stepRecord, err := createStep(ctx, a.qtx, EventKindMentioning, logger)
-
+	allRoleRecords, err := qtx.GetRoleByChannel(ctx, agent.channel.Name)
 	if err != nil {
+		logger.Error("failed to get user membership", zap.Error(err))
 		return
 	}
 
-	err = linkSteps(ctx, a.qtx, a.fromMention.stepID, stepRecord.ID, logger)
+	allMembersName := make([]string, len(allRoleRecords))
+	for i, roleRecord := range allRoleRecords {
+		allMembersName[i] = roleRecord.MemberName
+	}
+
+	mention := mention{
+		channelName:    agent.channel.Name,
+		fromMemberName: agent.member.Name,
+		fromRoleID:     agent.role.ID,
+		fromTaskID:     agent.task.ID,
+		toMemberNames:  []string{toMemberName},
+		allMemberNames: []string{toMemberName},
+		message:        message,
+	}
+
+	nextRunRecord, er := createRun(ctx, qtx, sourceStep.ID, logger)
+	err = er
 	if err != nil {
-		logger.Error("failed to link steps", zap.Error(err))
+		logger.Error("failed to create run", zap.Error(err))
 		return
 	}
 
-	createMentionParams := entities.CreateMentionParams{
-		ID:               ulid.Make().String(),
-		StepID:           stepRecord.ID,
-		ToolCallID:       toolCallId,
-		FromMemberTaskID: a.fromMention.toTask.ID,
-		ToMemberName:     toMemberName,
-		Message:          message,
-	}
-
-	mentionRecord, err := a.qtx.CreateMention(ctx, createMentionParams)
+	_, err = mention.persistMessage(ctx, qtx, sourceStep, logger)
 	if err != nil {
+		logger.Error("failed to persist mention message", zap.Error(err))
 		return
 	}
 
-	a.stream <- ChangeEvent{
-		Kind:        CdcEventKindMentioning,
-		StepID:      stepRecord.ID,
-		ChannelName: a.fromMention.channelName,
-		Mention: &entities.Mention{
-			ID:               mentionRecord.ID,
-			StepID:           stepRecord.ID,
-			FromMemberTaskID: mentionRecord.FromMemberTaskID,
-			ToMemberName:     mentionRecord.ToMemberName,
-			ToolCallID:       mentionRecord.ToolCallID,
-			Message:          mentionRecord.Message,
-		},
+	orchestrationPlan, err = mention.persistMentions(ctx, qtx, nextRunRecord, logger)
+	if err != nil {
+		logger.Error("failed to persist mention", zap.Error(err))
+		return
 	}
-
-	mentionStepId = stepRecord.ID
 
 	return
 
 }
 
-func (a *Agent) llmResponseToMessage(
+func (runtime *AgentRuntime) llmResponseToMessage(
 	ctx context.Context,
 	stepId string,
 	task entities.Task,
@@ -276,7 +247,7 @@ func (a *Agent) llmResponseToMessage(
 
 	if task.StreamMode {
 		logger.Info("getting LLM chunk response...")
-		llmChunkResponseRecords, er := a.ConversationHistoryDb.Queries.GetLlmChunkResponseByStep(ctx, stepId)
+		llmChunkResponseRecords, er := runtime.ConversationHistoryDb.Queries.GetLlmChunkResponseByStep(ctx, stepId)
 		err = er
 		if err != nil {
 			logger.Error("failed to get LLM chunk response", zap.Error(err))
@@ -321,7 +292,7 @@ func (a *Agent) llmResponseToMessage(
 
 	} else {
 		logger.Info("getting LLM response...")
-		llmResponseRecord, er := a.ConversationHistoryDb.Queries.GetLlmResponseByStep(ctx, stepId)
+		llmResponseRecord, er := runtime.ConversationHistoryDb.Queries.GetLlmResponseByStep(ctx, stepId)
 		err = er
 		if err != nil {
 			logger.Error("failed to get LLM response", zap.Error(err))

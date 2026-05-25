@@ -17,15 +17,8 @@ const (
 type EventKind string
 
 const (
-	EventKindMentioning   EventKind = "mentioning"
 	EventKindObserving EventKind = "observing"
+	EventKindAsking    EventKind = "asking"
 	EventKindReasoning EventKind = "reasoning"
 	EventKindActing    EventKind = "acting"
-)
-
-type StepStatus string
-
-const (
-	StepStatusPending   StepStatus = "pending"
-	StepStatusCompleted StepStatus = "completed"
 )

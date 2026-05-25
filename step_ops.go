@@ -38,6 +38,7 @@ func createStep(
 	ctx context.Context,
 	qtx *entities.Queries,
 	stepKind EventKind,
+	runId *string,
 	logger *zap.Logger,
 ) (
 	stepRecord entities.Step,
@@ -47,6 +48,11 @@ func createStep(
 		ID:   ulid.Make().String(),
 		Kind: string(stepKind),
 	}
+
+	if runId != nil {
+		stepRecordParams.RunID = *runId
+	}
+
 	stepRecord, err = qtx.CreateStep(ctx, stepRecordParams)
 	if err != nil {
 		logger.Error("failed to create current step", zap.Error(err))

@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *Agent) CallTool(
+func (runtime *AgentRuntime) CallTool(
 	ctx context.Context,
 	previousStepId string,
 	logger *zap.Logger,
