@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *agent) reason(
+func (agent *agent) reason(
 	ctx context.Context,
 	actiongOrObservingStepRecord entities.Step,
 	logger *zap.Logger,
@@ -22,15 +22,15 @@ func (a *agent) reason(
 ) {
 	logger = logger.With(zap.String("stepId", actiongOrObservingStepRecord.ID))
 
-	logger = logger.With(zap.String("channelId", a.channel.Name))
+	logger = logger.With(zap.String("channelId", agent.channel.Name))
 	logger.Info("getting messages...")
 
 	getContextMessagesParams := entities.GetContextMessagesParams{
-		TaskID:      a.task.ID,
-		RoleID:      a.role.ID,
-		ChannelName: a.channel.Name,
+		TaskID:      agent.task.ID,
+		RoleID:      agent.role.ID,
+		ChannelName: agent.channel.Name,
 	}
-	messageRecords, err := a.runtime.ConversationHistoryDb.Queries.GetContextMessages(ctx, getContextMessagesParams)
+	messageRecords, err := agent.runtime.ConversationHistoryDb.Queries.GetContextMessages(ctx, getContextMessagesParams)
 	if err != nil {
 		logger.Error("failed to get messages", zap.Error(err))
 		return
@@ -48,12 +48,12 @@ func (a *agent) reason(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		turnIntoAssistantMessage(&openAiMessage, a.member.Name)
+		turnIntoAssistantMessage(&openAiMessage, agent.member.Name)
 		openAiMessages[i] = openAiMessage
 	}
 
 	chatParams := openai.ChatCompletionNewParams{
-		Model:       a.task.Model,
+		Model:       agent.task.Model,
 		Messages:    openAiMessages,
 		N:           param.NewOpt(AmountOfChoices),
 		Temperature: param.NewOpt(Temperature),
@@ -62,21 +62,21 @@ func (a *agent) reason(
 
 	var reasoningStepRecord entities.Step
 
-	if a.task.StreamMode {
-		reasoningStepRecord, err = a.reasonInStreamMode(ctx, actiongOrObservingStepRecord, chatParams, logger)
+	if agent.task.StreamMode {
+		reasoningStepRecord, err = agent.reasonInStreamMode(ctx, actiongOrObservingStepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in stream mode", zap.Error(err))
 			return
 		}
 	} else {
-		reasoningStepRecord, err = a.reasonInOneShotMode(ctx, actiongOrObservingStepRecord, chatParams, logger)
+		reasoningStepRecord, err = agent.reasonInOneShotMode(ctx, actiongOrObservingStepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in one shot mode", zap.Error(err))
 			return
 		}
 	}
 
-	reply, err = a.act(ctx, reasoningStepRecord, logger)
+	reply, err = agent.act(ctx, reasoningStepRecord, logger)
 	if err != nil {
 		logger.Error("failed to act", zap.Error(err))
 		return
@@ -85,7 +85,7 @@ func (a *agent) reason(
 	return
 }
 
-func (a *agent) reasonInStreamMode(
+func (agent *agent) reasonInStreamMode(
 	ctx context.Context,
 	actiongOrObservingStepRecord entities.Step,
 	chatParams openai.ChatCompletionNewParams,
@@ -100,11 +100,11 @@ func (a *agent) reasonInStreamMode(
 
 	logger.Info("calling LLM in stream mode...")
 	// 1. Start the stream
-	stream := a.runtime.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
+	stream := agent.runtime.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
 	defer stream.Close()
 
 	// 2. Begin a transaction
-	trx, err := a.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	trx, err := agent.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("failed to begin transaction", zap.Error(err))
 		return
@@ -116,10 +116,10 @@ func (a *agent) reasonInStreamMode(
 		}
 	}()
 
-	qtx := a.runtime.ConversationHistoryDb.Queries.WithTx(trx)
+	qtx := agent.runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
 	// 3. Create a reasoning step
-	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, &a.runRecord.ID, logger)
+	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, &agent.runRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to create reasoning step", zap.Error(err))
 		return
@@ -153,10 +153,10 @@ func (a *agent) reasonInStreamMode(
 			ID:                  responseId,
 			SequenceNumber:      int64(sequenceNumber),
 			StepID:              reasoningStepRecord.ID,
-			TaskID:              a.task.ID,
+			TaskID:              agent.task.ID,
 			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 		}
-		err = a.runtime.insertChunk(ctx, qtx, createChunkParams, logger)
+		err = agent.runtime.insertChunk(ctx, qtx, createChunkParams, logger)
 		if err != nil {
 			logger.Error("failed to insert chunk", zap.Error(err))
 			return
@@ -179,7 +179,7 @@ func (a *agent) reasonInStreamMode(
 
 }
 
-func (a *agent) reasonInOneShotMode(
+func (agent *agent) reasonInOneShotMode(
 	ctx context.Context,
 	actiongOrObservingStepRecord entities.Step,
 	chatParams openai.ChatCompletionNewParams,
@@ -193,7 +193,7 @@ func (a *agent) reasonInOneShotMode(
 	logger = logger.With(zap.String("responseId", responseId))
 	logger.Info("calling LLM in one shot...")
 
-	maybeLlmResponse, er := a.runtime.LlmClient.Chat.Completions.New(ctx, chatParams)
+	maybeLlmResponse, er := agent.runtime.LlmClient.Chat.Completions.New(ctx, chatParams)
 	err = er
 	if err != nil {
 		logger.Error("failed to call LLM", zap.Error(err))
@@ -223,7 +223,7 @@ func (a *agent) reasonInOneShotMode(
 		return
 	}
 
-	trx, err := a.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	trx, err := agent.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("failed to begin transaction", zap.Error(err))
 		return
@@ -235,9 +235,9 @@ func (a *agent) reasonInOneShotMode(
 		}
 	}()
 
-	qtx := a.runtime.ConversationHistoryDb.Queries.WithTx(trx)
+	qtx := agent.runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
-	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, &a.runRecord.ID, logger)
+	reasoningStepRecord, err = createStep(ctx, qtx, EventKindReasoning, &agent.runRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to create reasoning step", zap.Error(err))
 		return
@@ -251,7 +251,7 @@ func (a *agent) reasonInOneShotMode(
 
 	createLlmResponseParams := entities.CreateLlmResponseParams{
 		ID:             responseId,
-		TaskID:         a.task.ID,
+		TaskID:         agent.task.ID,
 		StepID:         reasoningStepRecord.ID,
 		OpenaiResponse: json.RawMessage(llmResponseBytes),
 	}
