@@ -14,7 +14,7 @@ func (runtime *AgentRuntime) Ask(
 	message string,
 	logger *zap.Logger,
 ) (
-	runId string,
+	runIds []string,
 	err error,
 ) {
 	defer func() {
@@ -93,14 +93,7 @@ func (runtime *AgentRuntime) Ask(
 		return
 	}
 
-	runRecord, er := createRun(ctx, qtx, askingStepRecord.ID, logger)
-	err = er
-	if err != nil {
-		logger.Error("failed to create run", zap.Error(err))
-		return
-	}
-
-	_, err = mention.persistMentions(ctx, qtx, runRecord, logger)
+	orchestrationPlan, err := runtime.persistMentions(ctx, qtx, mention, askingStepRecord, logger)
 	err = er
 	if err != nil {
 		logger.Error("failed to persist mentions", zap.Error(err))
@@ -113,7 +106,9 @@ func (runtime *AgentRuntime) Ask(
 		return
 	}
 
-	runId = runRecord.ID
+	for _, mentionRecord := range orchestrationPlan.mentionRecords {
+		runIds = append(runIds, mentionRecord.RunID)
+	}
 
 	return
 

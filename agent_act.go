@@ -211,20 +211,13 @@ func (agent *agent) persistMention(
 		message:        message,
 	}
 
-	nextRunRecord, er := createRun(ctx, qtx, sourceStep.ID, logger)
-	err = er
-	if err != nil {
-		logger.Error("failed to create run", zap.Error(err))
-		return
-	}
-
 	_, err = mention.persistMessage(ctx, qtx, sourceStep, logger)
 	if err != nil {
 		logger.Error("failed to persist mention message", zap.Error(err))
 		return
 	}
 
-	orchestrationPlan, err = mention.persistMentions(ctx, qtx, nextRunRecord, logger)
+	orchestrationPlan, err = agent.runtime.persistMentions(ctx, qtx, mention, sourceStep, logger)
 	if err != nil {
 		logger.Error("failed to persist mention", zap.Error(err))
 		return

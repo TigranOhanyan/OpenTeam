@@ -156,7 +156,7 @@ func (agent *agent) reasonInStreamMode(
 			TaskID:              agent.task.ID,
 			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 		}
-		err = agent.runtime.insertChunk(ctx, qtx, createChunkParams, logger)
+		err = agent.insertChunk(ctx, qtx, createChunkParams, logger)
 		if err != nil {
 			logger.Error("failed to insert chunk", zap.Error(err))
 			return

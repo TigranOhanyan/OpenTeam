@@ -25,11 +25,11 @@ type mention struct {
 	message        string
 }
 
-func (a mention) addressingToPrefix() (prefix string) {
+func (mention mention) addressingToPrefix() (prefix string) {
 
 	allNamesExceptAuthor := make(map[string]struct{})
-	for _, memberName := range a.allMemberNames {
-		if memberName != a.fromMemberName {
+	for _, memberName := range mention.allMemberNames {
+		if memberName != mention.fromMemberName {
 			allNamesExceptAuthor[memberName] = struct{}{}
 		}
 	}
@@ -39,13 +39,13 @@ func (a mention) addressingToPrefix() (prefix string) {
 		return
 	}
 
-	if len(a.toMemberNames) == 1 {
-		prefix = fmt.Sprintf("%s! ", a.toMemberNames[0])
+	if len(mention.toMemberNames) == 1 {
+		prefix = fmt.Sprintf("%s! ", mention.toMemberNames[0])
 		return
 	}
 
 	isExactMatch := true
-	for _, toMemberName := range a.toMemberNames {
+	for _, toMemberName := range mention.toMemberNames {
 		if _, exists := allNamesExceptAuthor[toMemberName]; !exists {
 			isExactMatch = false
 			break
@@ -58,7 +58,7 @@ func (a mention) addressingToPrefix() (prefix string) {
 	}
 
 	stringBuilder := strings.Builder{}
-	for _, toMemberName := range a.toMemberNames {
+	for _, toMemberName := range mention.toMemberNames {
 		stringBuilder.WriteString(toMemberName)
 		stringBuilder.WriteString("! ")
 	}
@@ -68,7 +68,7 @@ func (a mention) addressingToPrefix() (prefix string) {
 
 }
 
-func (a mention) persistMessage(
+func (mention mention) persistMessage(
 	ctx context.Context,
 	qtx *entities.Queries,
 	stepRecord entities.Step,
@@ -78,14 +78,14 @@ func (a mention) persistMessage(
 	err error,
 ) {
 
-	mentionMessage := fmt.Sprintf("%s%s", a.addressingToPrefix(), a.message)
+	mentionMessage := fmt.Sprintf("%s%s", mention.addressingToPrefix(), mention.message)
 
 	openAiMessage := openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{
 			Content: openai.ChatCompletionUserMessageParamContentUnion{
 				OfString: param.NewOpt(mentionMessage),
 			},
-			Name: param.NewOpt(a.fromMemberName),
+			Name: param.NewOpt(mention.fromMemberName),
 		},
 	}
 
@@ -100,9 +100,9 @@ func (a mention) persistMessage(
 		OpenaiMessage: json.RawMessage(openAiMessageBytes),
 		Visibility:    string(VisibilityChannel),
 		StepID:        stepRecord.ID,
-		ChannelName:   a.channelName,
-		RoleID:        a.fromRoleID,
-		TaskID:        a.fromTaskID,
+		ChannelName:   mention.channelName,
+		RoleID:        mention.fromRoleID,
+		TaskID:        mention.fromTaskID,
 	}
 	_, err = qtx.CreateMessage(ctx, createMessageParams)
 	if err != nil {
@@ -114,18 +114,19 @@ func (a mention) persistMessage(
 	return
 }
 
-func (a mention) persistMentions(
+func (runtime *AgentRuntime) persistMentions(
 	ctx context.Context,
 	qtx *entities.Queries,
-	runRecord entities.Run, // this is a bug
+	mention mention,
+	sourceStep entities.Step,
 	logger *zap.Logger,
 ) (
 	orchestrationPlan Plan,
 	err error,
 ) {
 
-	for _, roleRecord := range a.toMemberNames {
-		if roleRecord == a.fromMemberName {
+	for _, roleRecord := range mention.toMemberNames {
+		if roleRecord == mention.fromMemberName {
 			continue
 		}
 
@@ -136,12 +137,19 @@ func (a mention) persistMentions(
 			return
 		}
 
+		nextRunRecord, er := createRun(ctx, qtx, sourceStep.ID, logger)
+		err = er
+		if err != nil {
+			logger.Error("failed to create run", zap.Error(err))
+			return
+		}
+
 		createMentionParams := entities.CreateMentionParams{
 			ID:               ulid.Make().String(),
-			RunID:            runRecord.ID,
-			FromMemberTaskID: a.fromTaskID,
+			RunID:            nextRunRecord.ID,
+			FromMemberTaskID: mention.fromTaskID,
 			ToMemberName:     toMemberRecord.Name,
-			Message:          a.message,
+			Message:          mention.message,
 		}
 
 		mentionRecord, er := qtx.CreateMention(ctx, createMentionParams)
@@ -149,6 +157,19 @@ func (a mention) persistMentions(
 		if err != nil {
 			logger.Error("failed to create mention", zap.Error(err))
 			return
+		}
+
+		if runtime.ChangeStream != nil {
+
+			runtime.ChangeStream <- ChangeEvent{
+				Kind:        CdcEventKindMention,
+				RunID:       nextRunRecord.ID,
+				StepID:      sourceStep.ID,
+				ChannelName: mention.channelName,
+				MemberName:  toMemberRecord.Name,
+				TaskID:      mention.fromTaskID,
+				Mention:     &mentionRecord,
+			}
 		}
 		orchestrationPlan.mentionRecords = append(orchestrationPlan.mentionRecords, mentionRecord)
 	}
