@@ -11,24 +11,14 @@ type Visibility string
 const (
 	VisibilityChannel Visibility = "channel"
 	VisibilityRole    Visibility = "role"
-	VisibilityDuty    Visibility = "duty"
-	VisibilityHidden  Visibility = "hidden"
+	VisibilityTask    Visibility = "task"
 )
 
 type EventKind string
 
 const (
-	EventKindArticulation EventKind = "articulation"
-	EventKindReply        EventKind = "reply"
-	EventKindThinking     EventKind = "thinking"
-	EventKindThought      EventKind = "thought"
-	EventKindActing       EventKind = "acting"
-	EventKindActed        EventKind = "acted"
-)
-
-type TurnStatus string
-
-const (
-	TurnStatusPending   TurnStatus = "pending"
-	TurnStatusCompleted TurnStatus = "completed"
+	EventKindObserving EventKind = "observing"
+	EventKindAsking    EventKind = "asking"
+	EventKindReasoning EventKind = "reasoning"
+	EventKindActing    EventKind = "acting"
 )

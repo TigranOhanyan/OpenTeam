@@ -69,7 +69,7 @@ OpenTeam argues that the solution isn't a bigger brain. The solution is the orga
 
 *   **The Members:** Dave, Alex, Sarah, and Marcus are the agents (or humans) in the system.
 *   **The Channels:** `#client-support`, `#triage`, and `#backend-dev` are strict context boundaries.
-*   **The Roles & Duties:** Alex has the duty of translating user complaints into technical metrics. Sarah has the duty of routing. Marcus has the duty of writing code.
+*   **The Roles & Tasks:** Alex has the task of translating user complaints into technical metrics. Sarah has the task of routing. Marcus has the task of writing code.
 *   **The Mentions:** Sarah doesn't write a hardcoded script to invoke Marcus. She just mentions `@Marcus` in the channel, and he wakes up.
 *   **Context Isolation:** Dave never sees Marcus's SQL logs. Marcus never sees Dave's complaints. The context is progressively refined as it moves through the channels.
 

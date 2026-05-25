@@ -6,12 +6,12 @@ import (
 	"go.uber.org/zap"
 )
 
-func (a *Agent) CallTool(
+func (runtime *AgentRuntime) CallTool(
 	ctx context.Context,
-	previousTurnId string,
+	previousStepId string,
 	logger *zap.Logger,
 ) (
-	nextTurnId string,
+	nextStepId string,
 	err error,
 ) {
 	return

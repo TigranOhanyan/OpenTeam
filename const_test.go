@@ -39,6 +39,6 @@ var llmOpenAiClient = openai.NewClient(
 	option.WithAPIKey(llmApiKey),
 )
 
-var agentProto = Agent{
+var agentProto = AgentRuntime{
 	LlmClient: &llmOpenAiClient,
 }
