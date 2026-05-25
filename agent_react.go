@@ -17,7 +17,7 @@ func (agent *agent) reAct(
 
 	qtx := agent.runtime.ConversationHistoryDb.Queries
 
-	observeStepRecord, err := createStep(ctx, qtx, EventKindObserving, nil, logger)
+	observeStepRecord, err := createStep(ctx, qtx, EventKindObserving, &agent.runRecord.ID, logger)
 	if err != nil {
 		logger.Error("failed to create init step", zap.Error(err))
 		return

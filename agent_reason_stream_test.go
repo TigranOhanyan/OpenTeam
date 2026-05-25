@@ -44,7 +44,7 @@ func Test_Agent_should_call_llm_when_reasoning_in_stream_mode(t *testing.T) {
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0,
@@ -80,9 +80,9 @@ func Test_Agent_should_call_llm_when_reasoning_in_stream_mode(t *testing.T) {
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	runId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	reply, err := agent.Run(ctx, askingStepId, testLogger)
+	reply, err := agent.Run(ctx, runId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
 	assert.Equal(t, 1, len(reply.replyStepIds))
@@ -128,7 +128,7 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0,
@@ -164,9 +164,9 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstRunId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
+	firstReply, err := agent.Run(ctx, firstRunId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, firstReply)
 
@@ -185,9 +185,9 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"},
+				{"role": "user", "content": "Hello!", "name": "Jim"},
 				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "Jane! How are you?", "name": "Jim"}
+				{"role": "user", "content": "How are you?", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0,
@@ -221,9 +221,9 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondRunId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
+	secondReply, err := agent.Run(ctx, secondRunId, testLogger)
 	assert.NotNil(t, secondReply)
 	assert.Equal(t, 1, len(secondReply.replyStepIds))
 	actualSecondReplyStepId := secondReply.replyStepIds[0]
@@ -272,7 +272,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0,
@@ -308,8 +308,8 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
-	reply, err := agent.Run(ctx, askingStepId, testLogger)
+	runId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	reply, err := agent.Run(ctx, runId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
 	assert.Equal(t, 1, len(reply.replyStepIds))
@@ -318,20 +318,23 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.NoError(t, err)
 
 	actualStep1 := allSteps[0]
-	assert.Equal(t, actualStep1.Kind, string(EventKindMentioning))
-
-	actualStep2 := allSteps[1]
-	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
-	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep2.ID)
+	assert.Equal(t, actualStep1.Kind, string(EventKindAsking))
+	assert.Nil(t, actualStep1.RunID)
+	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep1.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
 	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
+	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
+
+	actualStep2 := allSteps[1]
+	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
+	assert.Equal(t, actualStep2.RunID, runId)
 
 	actualStep3 := allSteps[2]
 	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
+	assert.Equal(t, actualStep3.RunID, runId)
 	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
@@ -347,6 +350,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 	actualStep4 := allSteps[3]
 	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
+	assert.Equal(t, actualStep4.RunID, runId)
 	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
@@ -385,7 +389,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0,
@@ -421,8 +425,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
-	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
+	firstRunId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	assert.NoError(t, err)
+	firstReply, err := agent.Run(ctx, firstRunId, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(firstReply.replyStepIds))
 
@@ -430,9 +435,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"},
+				{"role": "user", "content": "Hello!", "name": "Jim"},
 				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "Jane! How are you?", "name": "Jim"}
+				{"role": "user", "content": "How are you?", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0,
@@ -466,8 +471,9 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
-	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
+	secondRunId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	assert.NoError(t, err)
+	secondReply, err := agent.Run(ctx, secondRunId, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(secondReply.replyStepIds))
 
@@ -475,20 +481,23 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.NoError(t, err)
 
 	actualStep1 := allSteps[0]
-	assert.Equal(t, actualStep1.Kind, string(EventKindMentioning))
-
-	actualStep2 := allSteps[1]
-	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
-	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep2.ID)
+	assert.Equal(t, actualStep1.Kind, string(EventKindAsking))
+	assert.Nil(t, actualStep1.RunID)
+	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep1.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
 	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
+	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
+
+	actualStep2 := allSteps[1]
+	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
+	assert.Equal(t, actualStep2.RunID, firstRunId)
 
 	actualStep3 := allSteps[2]
 	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
+	assert.Equal(t, actualStep3.RunID, firstRunId)
 	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
@@ -504,6 +513,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	actualStep4 := allSteps[3]
 	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
+	assert.Equal(t, actualStep4.RunID, firstRunId)
 	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
@@ -513,20 +523,24 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
 
 	actualStep5 := allSteps[4]
-	assert.Equal(t, actualStep5.Kind, string(EventKindMentioning))
+	assert.Equal(t, actualStep5.Kind, string(EventKindAsking))
+	assert.Nil(t, actualStep5.RunID)
 
-	actualStep6 := allSteps[5]
-	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
-	actualMessage2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep6.ID)
+	actualMessage2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep5.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage2.Visibility, string(VisibilityChannel))
 	actualMessage2Json, err := json.Marshal(actualMessage2.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedMessage2Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! How are you?","role":"user"}`)
+	expectedMessage2Json := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
 	assert.JSONEq(t, expectedMessage2Json, string(actualMessage2Json))
+
+	actualStep6 := allSteps[5]
+	assert.Equal(t, actualStep6.Kind, string(EventKindObserving))
+	assert.Equal(t, actualStep6.RunID, secondRunId)
 
 	actualStep7 := allSteps[6]
 	assert.Equal(t, actualStep7.Kind, string(EventKindReasoning))
+	assert.Equal(t, actualStep7.RunID, secondRunId)
 	actualLlmChunkRecords, err = teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep7.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 2)
@@ -538,7 +552,8 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.JSONEq(t, secondResponseChunk2, string(actualLlmChunk2Json))
 
 	actualStep8 := allSteps[7]
-	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
+	assert.Equal(t, actualStep8.Kind, string(EventKindActing))
+	assert.Equal(t, actualStep8.RunID, secondRunId)
 	actualReplying2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep8.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying2.Visibility, string(VisibilityChannel))

@@ -53,7 +53,7 @@ func (agent *agent) act(
 		return
 	}
 
-	llmResponseAsMessage, messageId, err := agent.runtime.llmResponseToMessage(ctx, actingStepRecord.ID, agent.task, logger)
+	llmResponseAsMessage, messageId, err := agent.runtime.llmResponseToMessage(ctx, reasoningStepRecord.ID, agent.task, logger)
 	if err != nil {
 		logger.Error("failed to get llm response as message", zap.Error(err))
 		return

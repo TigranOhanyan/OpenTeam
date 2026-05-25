@@ -44,7 +44,7 @@ func Test_Agent_should_call_llm_when_reasoning(t *testing.T) {
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0
@@ -146,7 +146,7 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0
@@ -219,9 +219,9 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"},
+				{"role": "user", "content": "Hello!", "name": "Jim"},
 				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "Jane! How are you?", "name": "Jim"}
+				{"role": "user", "content": "How are you?", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0
@@ -327,7 +327,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0
@@ -393,13 +393,13 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 	actualStep1 := allSteps[0]
 	assert.Equal(t, actualStep1.Kind, string(EventKindAsking))
-	assert.Equal(t, actualStep1.RunID, runId)
+	assert.Nil(t, actualStep1.RunID)
 	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep1.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
 	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
+	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
 	actualStep2 := allSteps[1]
@@ -456,7 +456,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello!", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0
@@ -513,14 +513,16 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	firstRunId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
+	_, err = agent.Run(ctx, firstRunId, testLogger)
+	assert.NoError(t, err)
 
 	secondRequestBodyJson :=
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Jane! Hello!", "name": "Jim"},
+				{"role": "user", "content": "Hello!", "name": "Jim"},
 				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "Jane! How are you?", "name": "Jim"}
+				{"role": "user", "content": "How are you?", "name": "Jim"}
 			],
 			"n": 1,
 			"temperature": 1.0
@@ -577,19 +579,21 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	secondRunId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
+	_, err = agent.Run(ctx, secondRunId, testLogger)
+	assert.NoError(t, err)
 
 	allSteps, err := teamDb.Queries.GetSteps(ctx)
 	assert.NoError(t, err)
 
 	actualStep1 := allSteps[0]
 	assert.Equal(t, actualStep1.Kind, string(EventKindAsking))
-	assert.Equal(t, actualStep1.RunID, firstRunId)
+	assert.Nil(t, actualStep1.RunID)
 	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep1.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
 	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! Hello!","role":"user"}`)
+	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
 
 	actualStep2 := allSteps[1]
@@ -618,13 +622,13 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	actualStep5 := allSteps[4]
 	assert.Equal(t, actualStep5.Kind, string(EventKindAsking))
-	assert.Equal(t, actualStep5.RunID, secondRunId)
+	assert.Nil(t, actualStep5.RunID)
 	actualMessage2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep5.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMessage2.Visibility, string(VisibilityChannel))
 	actualMessage2Json, err := json.Marshal(actualMessage2.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedMessage2Json := fmt.Sprintf(`{"name":"Jim","content":"Jane! How are you?","role":"user"}`)
+	expectedMessage2Json := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
 	assert.JSONEq(t, expectedMessage2Json, string(actualMessage2Json))
 
 	actualStep6 := allSteps[5]
