@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
-	"github.com/openteam/entities"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )

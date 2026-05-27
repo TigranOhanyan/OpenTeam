@@ -3,7 +3,7 @@ package openteam
 import (
 	"context"
 
-	"github.com/openteam/entities"
+	"github.com/TigranOhanyan/OpenTeam/entities"
 	"go.uber.org/zap"
 )
 

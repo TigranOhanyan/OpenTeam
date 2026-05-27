@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
-	"github.com/openteam/entities"
 	"go.uber.org/zap"
 )
 

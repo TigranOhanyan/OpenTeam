@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/openai/openai-go/v3"
-	"github.com/openteam/entities"
 	"github.com/stretchr/testify/assert"
 	"github.com/wiremock/go-wiremock"
 )

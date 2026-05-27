@@ -3,9 +3,9 @@ package openteam
 import (
 	"time"
 
+	testutils "github.com/TigranOhanyan/OpenTeam/testutil"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	testutils "github.com/openteam/testutil"
 	"github.com/wiremock/go-wiremock"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

@@ -1,4 +1,4 @@
-module github.com/openteam
+module github.com/TigranOhanyan/OpenTeam
 
 go 1.25.1
 

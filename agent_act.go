@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
-	"github.com/openteam/entities"
 	"go.uber.org/zap"
 )
 

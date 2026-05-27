@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/openteam/entities"
+	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/pressly/goose/v3"
 	"go.uber.org/zap"
 	_ "turso.tech/database/tursogo"

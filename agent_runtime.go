@@ -3,8 +3,8 @@ package openteam
 import (
 	"context"
 
+	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/openai/openai-go/v3"
-	"github.com/openteam/entities"
 	"go.uber.org/zap"
 )
 
