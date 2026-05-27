@@ -80,12 +80,10 @@ func Test_Agent_should_call_llm_when_reasoning_in_stream_mode(t *testing.T) {
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	runIds, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runIds))
-	runId := runIds[0]
-	assert.NoError(t, err)
-	reply, err := agent.Run(ctx, runId, testLogger)
+	assert.NotEmpty(t, askingStepId)
+	reply, err := agent.Run(ctx, askingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
 	assert.Equal(t, 1, len(reply.replyStepIds))
@@ -167,12 +165,10 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstRunIds, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstRunIds))
-	firstRunId := firstRunIds[0]
-	assert.NoError(t, err)
-	firstReply, err := agent.Run(ctx, firstRunId, testLogger)
+	assert.NotEmpty(t, firstAskingStepId)
+	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, firstReply)
 
@@ -227,12 +223,10 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondRunIds, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondRunIds))
-	secondRunId := secondRunIds[0]
-	assert.NoError(t, err)
-	secondReply, err := agent.Run(ctx, secondRunId, testLogger)
+	assert.NotEmpty(t, secondAskingStepId)
+	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
 	assert.NotNil(t, secondReply)
 	assert.Equal(t, 1, len(secondReply.replyStepIds))
 	actualSecondReplyStepId := secondReply.replyStepIds[0]
@@ -317,15 +311,18 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	runIds, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runIds))
-	runId := runIds[0]
-	assert.NoError(t, err)
-	reply, err := agent.Run(ctx, runId, testLogger)
+	assert.NotEmpty(t, askingStepId)
+	reply, err := agent.Run(ctx, askingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
 	assert.Equal(t, 1, len(reply.replyStepIds))
+
+	actualRunRecords, err := teamDb.Queries.GetRunsBySourceStep(ctx, askingStepId)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
+	actualRunId := actualRunRecords[0].ID
 
 	allSteps, err := teamDb.Queries.GetSteps(ctx)
 	assert.NoError(t, err)
@@ -343,11 +340,11 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 	actualStep2 := allSteps[1]
 	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
-	assert.Equal(t, actualStep2.RunID, runId)
+	assert.Equal(t, actualStep2.RunID, actualRunId)
 
 	actualStep3 := allSteps[2]
 	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
-	assert.Equal(t, actualStep3.RunID, runId)
+	assert.Equal(t, actualStep3.RunID, actualRunId)
 	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
@@ -363,7 +360,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 	actualStep4 := allSteps[3]
 	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
-	assert.Equal(t, actualStep4.RunID, runId)
+	assert.Equal(t, actualStep4.RunID, actualRunId)
 	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
@@ -438,12 +435,10 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstRunIds, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstRunIds))
-	firstRunId := firstRunIds[0]
-	assert.NoError(t, err)
-	firstReply, err := agent.Run(ctx, firstRunId, testLogger)
+	assert.NotEmpty(t, firstAskingStepId)
+	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(firstReply.replyStepIds))
 
@@ -487,13 +482,22 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondRunIds, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondRunIds))
-	secondRunId := secondRunIds[0]
-	secondReply, err := agent.Run(ctx, secondRunId, testLogger)
+	assert.NotEmpty(t, secondAskingStepId)
+	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(secondReply.replyStepIds))
+
+	actualFirstRunRecords, err := teamDb.Queries.GetRunsBySourceStep(ctx, firstAskingStepId)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualFirstRunRecords))
+	actualFirstRunId := actualFirstRunRecords[0].ID
+
+	actualSecondRunRecords, err := teamDb.Queries.GetRunsBySourceStep(ctx, secondAskingStepId)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualSecondRunRecords))
+	actualSecondRunId := actualSecondRunRecords[0].ID
 
 	allSteps, err := teamDb.Queries.GetSteps(ctx)
 	assert.NoError(t, err)
@@ -511,11 +515,11 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	actualStep2 := allSteps[1]
 	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
-	assert.Equal(t, actualStep2.RunID, firstRunId)
+	assert.Equal(t, actualStep2.RunID, actualFirstRunId)
 
 	actualStep3 := allSteps[2]
 	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
-	assert.Equal(t, actualStep3.RunID, firstRunId)
+	assert.Equal(t, actualStep3.RunID, actualFirstRunId)
 	actualLlmChunkRecords, err := teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep3.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 3)
@@ -531,7 +535,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	actualStep4 := allSteps[3]
 	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
-	assert.Equal(t, actualStep4.RunID, firstRunId)
+	assert.Equal(t, actualStep4.RunID, actualFirstRunId)
 	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
@@ -554,11 +558,11 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	actualStep6 := allSteps[5]
 	assert.Equal(t, actualStep6.Kind, string(EventKindObserving))
-	assert.Equal(t, actualStep6.RunID, secondRunId)
+	assert.Equal(t, actualStep6.RunID, actualSecondRunId)
 
 	actualStep7 := allSteps[6]
 	assert.Equal(t, actualStep7.Kind, string(EventKindReasoning))
-	assert.Equal(t, actualStep7.RunID, secondRunId)
+	assert.Equal(t, actualStep7.RunID, actualSecondRunId)
 	actualLlmChunkRecords, err = teamDb.Queries.GetLlmChunkResponseByStep(ctx, actualStep7.ID)
 	assert.NoError(t, err)
 	assert.Len(t, actualLlmChunkRecords, 2)
@@ -571,7 +575,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	actualStep8 := allSteps[7]
 	assert.Equal(t, actualStep8.Kind, string(EventKindActing))
-	assert.Equal(t, actualStep8.RunID, secondRunId)
+	assert.Equal(t, actualStep8.RunID, actualSecondRunId)
 	actualReplying2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep8.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualReplying2.Visibility, string(VisibilityChannel))

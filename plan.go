@@ -23,14 +23,14 @@ func (o *Plan) isFinalReply() bool {
 func reconstitutePlan(
 	ctx context.Context,
 	qtx *entities.Queries,
-	runRecord entities.Run,
+	askingStepId string,
 	logger *zap.Logger,
 ) (
 	plan Plan,
 	err error,
 ) {
 
-	mentionRecords, err := qtx.GetMentionsByRun(ctx, runRecord.ID)
+	mentionRecords, err := qtx.GetMentionsBySourceStep(ctx, askingStepId)
 	if err != nil {
 		logger.Error("failed to get mention", zap.Error(err))
 		return

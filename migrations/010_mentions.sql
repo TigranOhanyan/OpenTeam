@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE mentions (
     id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL,
+    run_id TEXT NOT NULL UNIQUE,
     from_member_task_id TEXT NOT NULL,
     to_member_name TEXT NOT NULL,
     message TEXT NOT NULL,

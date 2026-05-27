@@ -8,7 +8,7 @@ import (
 
 func (runtime *AgentRuntime) Run(
 	ctx context.Context,
-	runId string,
+	askingStepId string,
 	logger *zap.Logger,
 ) (
 	reply Reply,
@@ -33,13 +33,7 @@ func (runtime *AgentRuntime) Run(
 
 	qtx := runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
-	runRecord, err := qtx.GetRun(ctx, runId)
-	if err != nil {
-		logger.Error("failed to get run", zap.Error(err))
-		return
-	}
-
-	orchestrationPlan, err := reconstitutePlan(ctx, qtx, runRecord, logger)
+	orchestrationPlan, err := reconstitutePlan(ctx, qtx, askingStepId, logger)
 	if err != nil {
 		logger.Error("failed to reconstitute plan", zap.Error(err))
 		return
