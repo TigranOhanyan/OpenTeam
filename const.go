@@ -1,4 +1,4 @@
-package openteam
+package OpenTeam
 
 const (
 	AmountOfChoices   int64   = 1

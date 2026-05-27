@@ -1,4 +1,4 @@
-package openteam
+package OpenTeam
 
 import (
 	"time"

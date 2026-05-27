@@ -1,4 +1,4 @@
-package openteam
+package OpenTeam
 
 import (
 	"github.com/openai/openai-go/v3"
