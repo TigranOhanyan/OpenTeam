@@ -3,8 +3,6 @@
 .hole/
 .metals/
 
-entities/
-
 testutil/testdata/junk/*.db
 testutil/testdata/junk/*.db*
 testutil/testdata/junk/**/*.db
