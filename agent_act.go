@@ -130,7 +130,7 @@ func (agent *agent) act(
 			return
 		}
 
-		reply.replyStepIds = append(reply.replyStepIds, actingStepRecord.ID)
+		reply.ReplyStepIds = append(reply.ReplyStepIds, actingStepRecord.ID)
 	}
 
 	err = trx.Commit()

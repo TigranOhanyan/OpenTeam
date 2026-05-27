@@ -1,6 +1,6 @@
 package OpenTeam
 
 type Reply struct {
-	replyStepIds []string
-	actionIds    []string
+	ReplyStepIds []string
+	ActionIds    []string
 }

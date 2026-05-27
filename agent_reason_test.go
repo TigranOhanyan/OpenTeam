@@ -104,8 +104,8 @@ func Test_Agent_should_call_llm_when_reasoning(t *testing.T) {
 	assert.NotEmpty(t, askingStepId)
 	reply, err := agent.Run(ctx, askingStepId, testLogger)
 	assert.NotNil(t, reply)
-	assert.Equal(t, 1, len(reply.replyStepIds))
-	actualReplyStepId := reply.replyStepIds[0]
+	assert.Equal(t, 1, len(reply.ReplyStepIds))
+	actualReplyStepId := reply.ReplyStepIds[0]
 
 	actualReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualReplyStepId)
 	assert.NoError(t, err)
@@ -207,8 +207,8 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 	assert.NotEmpty(t, firstAskingStepId)
 	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstReply.replyStepIds))
-	actualFirstReplyStepId := firstReply.replyStepIds[0]
+	assert.Equal(t, 1, len(firstReply.ReplyStepIds))
+	actualFirstReplyStepId := firstReply.ReplyStepIds[0]
 
 	actualFirstReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualFirstReplyStepId)
 	assert.NoError(t, err)
@@ -285,8 +285,8 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, secondReply)
-	assert.Equal(t, 1, len(secondReply.replyStepIds))
-	actualSecondReplyStepId := secondReply.replyStepIds[0]
+	assert.Equal(t, 1, len(secondReply.ReplyStepIds))
+	actualSecondReplyStepId := secondReply.ReplyStepIds[0]
 
 	actualSecondReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondReplyStepId)
 	assert.NoError(t, err)
@@ -393,7 +393,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	reply, err := agent.Run(ctx, askingStepId, testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, reply)
-	assert.Equal(t, 1, len(reply.replyStepIds))
+	assert.Equal(t, 1, len(reply.ReplyStepIds))
 
 	allSteps, err := teamDb.Queries.GetSteps(ctx)
 	assert.NoError(t, err)
