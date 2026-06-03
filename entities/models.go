@@ -33,7 +33,6 @@ type Handoff struct {
 type LlmChunkResponse struct {
 	ID                  string          `json:"id"`
 	SequenceNumber      int64           `json:"sequence_number"`
-	RunID               string          `json:"run_id"`
 	StepID              string          `json:"step_id"`
 	TaskID              string          `json:"task_id"`
 	OpenaiChunkResponse json.RawMessage `json:"openai_chunk_response"`

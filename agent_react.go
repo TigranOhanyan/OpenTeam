@@ -18,12 +18,11 @@ var InvalidMentionArgumentsError = errors.New("invalid mention arguments")
 
 func (agent *agenticReActLoop) reAct(
 	ctx context.Context,
-	stepRecord entities.Step,
 	logger *zap.Logger,
 ) (
 	err error,
 ) {
-	logger = logger.With(zap.String("stepId", stepRecord.ID))
+	logger = logger.With(zap.String("stepId", agent.stepRecord.ID))
 
 	logger = logger.With(zap.String("channelId", agent.channel.Name))
 	logger.Info("getting messages...")
@@ -81,13 +80,13 @@ func (agent *agenticReActLoop) reAct(
 	var messageId string
 
 	if agent.task.StreamMode {
-		llmResponseAsMessage, messageId, err = agent.reasonInStreamMode(ctx, qtx, stepRecord, chatParams, logger)
+		llmResponseAsMessage, messageId, err = agent.reasonInStreamMode(ctx, qtx, agent.stepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in stream mode", zap.Error(err))
 			return
 		}
 	} else {
-		llmResponseAsMessage, messageId, err = agent.reasonInOneShotMode(ctx, qtx, stepRecord, chatParams, logger)
+		llmResponseAsMessage, messageId, err = agent.reasonInOneShotMode(ctx, qtx, agent.stepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in one shot mode", zap.Error(err))
 			return
@@ -135,7 +134,7 @@ func (agent *agenticReActLoop) reAct(
 		createMessageParams := entities.CreateMessageParams{
 			ID:            messageId,
 			Visibility:    string(VisibilityChannel),
-			StepID:        stepRecord.ID,
+			StepID:        agent.stepRecord.ID,
 			ChannelName:   agent.channel.Name,
 			RoleID:        agent.role.ID,
 			TaskID:        agent.task.ID,
@@ -165,7 +164,7 @@ func (agent *agenticReActLoop) reAct(
 		createMessageParams := entities.CreateMessageParams{
 			ID:            toolMessageId,
 			Visibility:    string(VisibilityTask),
-			StepID:        stepRecord.ID,
+			StepID:        agent.stepRecord.ID,
 			ChannelName:   agent.channel.Name,
 			RoleID:        agent.role.ID,
 			TaskID:        agent.task.ID,
@@ -181,7 +180,7 @@ func (agent *agenticReActLoop) reAct(
 	}
 
 	logger.Info("marking step as complete...")
-	_, err = qtx.CompleteStep(ctx, stepRecord.ID)
+	_, err = qtx.CompleteStep(ctx, agent.stepRecord.ID)
 	if err != nil {
 		logger.Error("failed to update step", zap.Error(err))
 		return
@@ -280,7 +279,6 @@ func (agent *agenticReActLoop) reasonInStreamMode(
 				MemberName:  agent.member.Name,
 				ChannelName: agent.channel.Name,
 				Chunk: &entities.LlmChunkResponse{
-					RunID:               agent.runRecord.ID,
 					ID:                  createChunkParams.ID,
 					SequenceNumber:      createChunkParams.SequenceNumber,
 					StepID:              createChunkParams.StepID,

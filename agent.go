@@ -25,7 +25,7 @@ func (runtime *AgentRuntime) createAgent(
 	ctx context.Context,
 	runId string,
 	logger *zap.Logger,
-) (a agenticReActLoop, err error) {
+) (agent *agenticReActLoop, err error) {
 
 	logger = logger.With(zap.String("runId", runId))
 	logger.Info("getting current step...")
@@ -38,15 +38,30 @@ func (runtime *AgentRuntime) createAgent(
 		return
 	}
 
-	pendingStepRecords, err := qtx.GetPendingStepsByRun(ctx, runRecord.ID)
+	stepsRecords, err := qtx.GetStepsByRunId(ctx, runRecord.ID)
 	if err != nil {
-		logger.Error("failed to get pending steps", zap.Error(err))
+		logger.Error("failed to get steps", zap.Error(err))
 		return
 	}
 
-	if len(pendingStepRecords) > 1 {
-		logger.Info("pending steps found", zap.Int("count", len(pendingStepRecords)))
+	pendingStepRecords := make([]entities.Step, 0)
+	for _, stepRecord := range stepsRecords {
+		if stepRecord.Status == "pending" {
+			pendingStepRecords = append(pendingStepRecords, stepRecord)
+		}
+	}
+
+	isInconsistent := len(pendingStepRecords) > 1
+	if isInconsistent {
+		logger.Info("inconsistent steps found", zap.Int("count", len(pendingStepRecords)))
 		err = MultiplePendingStepsError
+		return
+	}
+
+	isCompleted := len(stepsRecords) > 0 && len(pendingStepRecords) == 0
+
+	if isCompleted {
+		logger.Info("run is completed", zap.String("runId", runRecord.ID))
 		return
 	}
 
@@ -56,7 +71,6 @@ func (runtime *AgentRuntime) createAgent(
 		pendingStepRecord = pendingStepRecords[0]
 
 	} else {
-
 		pendingStepRecord, err = createStep(ctx, qtx, runRecord.ID, logger)
 		if err != nil {
 			logger.Error("failed to create pending step", zap.Error(err))
@@ -113,7 +127,7 @@ func (runtime *AgentRuntime) createAgent(
 		return
 	}
 
-	a = agenticReActLoop{
+	agent = &agenticReActLoop{
 		runtime:    runtime,
 		runRecord:  runRecord,
 		stepRecord: pendingStepRecord,
