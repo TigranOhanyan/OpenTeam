@@ -133,7 +133,7 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 	mentions mentions,
 	logger *zap.Logger,
 ) (
-	orchestrationPlan Plan,
+	messageRecord entities.Message,
 	err error,
 ) {
 
@@ -146,7 +146,7 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 	createMessageParams.StepID = agent.stepRecord.ID
 	createMessageParams.TaskID = agent.task.ID
 
-	messageRecord, err := qtx.CreateMessage(ctx, createMessageParams)
+	messageRecord, err = qtx.CreateMessage(ctx, createMessageParams)
 	if err != nil {
 		logger.Error("failed to create message", zap.Error(err))
 		return
@@ -201,7 +201,6 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 				Mention:     &mentionRecord,
 			}
 		}
-		orchestrationPlan.mentionRecords = append(orchestrationPlan.mentionRecords, mentionRecord)
 	}
 
 	return

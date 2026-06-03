@@ -1,18 +1,119 @@
 package OpenTeam
 
 import (
-	"github.com/TigranOhanyan/OpenTeam/entities"
+	"encoding/json"
+	"strings"
+
+	"github.com/bytedance/gopkg/util/logger"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/param"
+	"go.uber.org/zap"
 )
 
-type Plan struct {
-	mentionRecords []entities.Mention
-	actingStepIds  []string
+type plan struct {
+	hasMessage    bool
+	mentionsPlans []mentionPlan
+	actionPlans   []actionPlan
 }
 
-func (o *Plan) isOnlyControl() bool {
-	return len(o.mentionRecords) != 0 && len(o.actingStepIds) == 0
+type mentionPlan struct {
+	agentName string
+	message   string
+	toolCall  openai.ChatCompletionMessageToolCallUnionParam
 }
 
-func (o *Plan) isFinalReply() bool {
-	return len(o.mentionRecords) == 0 && len(o.actingStepIds) == 0
+type actionPlan struct {
+	toolCall openai.ChatCompletionMessageToolCallUnionParam
+}
+
+// func (o *plan) hasActions() bool {
+// 	return len(o.actingStepIds) != 0
+// }
+
+func (o *plan) isFinalReply() bool {
+	return len(o.mentionsPlans) == 0 && len(o.actionPlans) == 0
+}
+
+func (plan *plan) parse(
+	message openai.ChatCompletionMessageParamUnion,
+) (
+	err error,
+) {
+	assistantMessage := message.OfAssistant
+	if param.IsOmitted(assistantMessage) {
+		return
+	}
+
+	for _, toolCall := range assistantMessage.ToolCalls {
+		if param.IsOmitted(toolCall.OfFunction) {
+			continue
+		}
+		function := toolCall.OfFunction
+		var args map[string]interface{}
+		err = json.Unmarshal([]byte(function.Function.Arguments), &args)
+		if err != nil {
+			logger.Error("failed to unmarshal articulattion", zap.Error(err))
+			return
+		}
+		if strings.EqualFold(function.Function.Name, mentionMemberFunction.Name) {
+
+			agentNameCandidate, ok := args["agent_name"]
+			if !ok {
+				err = InvalidMentionArgumentsError
+				return
+			}
+			agentName, ok := agentNameCandidate.(string)
+			if !ok {
+				err = InvalidMentionArgumentsError
+				return
+			}
+
+			messageCandidate, ok := args["message"]
+			if !ok {
+				err = InvalidMentionArgumentsError
+				return
+			}
+			message, ok := messageCandidate.(string)
+			if !ok {
+				err = InvalidMentionArgumentsError
+				return
+			}
+
+			mentionPlan := mentionPlan{
+				agentName: agentName,
+				message:   message,
+				toolCall:  toolCall,
+			}
+
+			plan.mentionsPlans = append(plan.mentionsPlans, mentionPlan)
+		} else {
+			err = UnexpectedMessageStructureError
+			return
+		}
+	}
+
+	if !param.IsOmitted(assistantMessage.Content.OfString) {
+		plan.hasMessage = true
+	}
+
+	if len(assistantMessage.Content.OfArrayOfContentParts) > 0 {
+		plan.hasMessage = true
+	}
+
+	return
+}
+
+func (plan *plan) filterControlToolCalls(
+	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
+) (filteredLlmResponseAsMessage openai.ChatCompletionMessageParamUnion) {
+	filteredLlmResponseAsMessage = llmResponseAsMessage
+	if param.IsOmitted(llmResponseAsMessage.OfAssistant) {
+		return
+	}
+	filteredToolCalls := make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(plan.actionPlans))
+	for _, actionPlan := range plan.actionPlans {
+		filteredToolCalls = append(filteredToolCalls, actionPlan.toolCall)
+	}
+	llmResponseAsMessage.OfAssistant.ToolCalls = filteredToolCalls
+	return
 }

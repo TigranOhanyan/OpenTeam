@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
@@ -22,7 +21,6 @@ func (agent *agenticReActLoop) reAct(
 	stepRecord entities.Step,
 	logger *zap.Logger,
 ) (
-	reply Reply,
 	err error,
 ) {
 	logger = logger.With(zap.String("stepId", stepRecord.ID))
@@ -96,6 +94,8 @@ func (agent *agenticReActLoop) reAct(
 		}
 	}
 
+	setName(&llmResponseAsMessage, agent.member.Name)
+
 	logger = logger.With(zap.String("messageId", messageId))
 
 	if param.IsOmitted(llmResponseAsMessage.OfAssistant) {
@@ -103,42 +103,23 @@ func (agent *agenticReActLoop) reAct(
 		return
 	}
 
-	assistantMessage := llmResponseAsMessage.OfAssistant
+	orchestrationPlan := plan{}
+	err = orchestrationPlan.parse(llmResponseAsMessage)
+	if err != nil {
+		logger.Error("failed to parse plan", zap.Error(err))
+		return
+	}
 
-	orchestrationPlan := Plan{}
-
-	for _, toolCall := range assistantMessage.ToolCalls {
-		if param.IsOmitted(toolCall.OfFunction) {
-			continue
-		}
-		function := toolCall.OfFunction
-		var args map[string]interface{}
-		err = json.Unmarshal([]byte(function.Function.Arguments), &args)
+	for _, mentionPlan := range orchestrationPlan.mentionsPlans {
+		_, err = agent.persistMention(ctx, qtx, mentionPlan, logger)
 		if err != nil {
-			logger.Error("failed to unmarshal articulattion", zap.Error(err))
-			return
-		}
-		if strings.EqualFold(function.Function.Name, mentionMemberFunction.Name) {
-
-			mentionOrchestrationPlan, er := agent.persistMention(ctx, qtx, args, function.ID, stepRecord, logger)
-			err = er
-			if err != nil {
-				logger.Error("failed to persist mention", zap.Error(err))
-				return
-			}
-
-			orchestrationPlan.mentionRecords = append(orchestrationPlan.mentionRecords, mentionOrchestrationPlan.mentionRecords...)
-			orchestrationPlan.actingStepIds = append(orchestrationPlan.actingStepIds, mentionOrchestrationPlan.actingStepIds...)
-		} else {
-			err = UnexpectedMessageStructureError
+			logger.Error("failed to persist mention", zap.Error(err))
 			return
 		}
 	}
 
-	if !orchestrationPlan.isOnlyControl() {
+	if orchestrationPlan.hasMessage {
 		logger.Info("persisting message...")
-
-		setName(&llmResponseAsMessage, agent.member.Name)
 
 		turnIntoUserMessage(&llmResponseAsMessage)
 
@@ -167,7 +148,66 @@ func (agent *agenticReActLoop) reAct(
 			return
 		}
 
-		reply.ReplyStepIds = append(reply.ReplyStepIds, stepRecord.ID)
+	}
+
+	if len(orchestrationPlan.actionPlans) > 0 {
+		logger.Info("persisting message...")
+
+		filteredLlmResponseAsMessage := orchestrationPlan.filterControlToolCalls(llmResponseAsMessage)
+		filteredLlmResponseAsMessageBytes, er := json.Marshal(filteredLlmResponseAsMessage)
+		err = er
+		if err != nil {
+			logger.Error("failed to marshal llm response as message", zap.Error(err))
+			return
+		}
+
+		toolMessageId := ulid.Make().String()
+		createMessageParams := entities.CreateMessageParams{
+			ID:            toolMessageId,
+			Visibility:    string(VisibilityTask),
+			StepID:        stepRecord.ID,
+			ChannelName:   agent.channel.Name,
+			RoleID:        agent.role.ID,
+			TaskID:        agent.task.ID,
+			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
+		}
+
+		_, err = qtx.CreateMessage(ctx, createMessageParams)
+		if err != nil {
+			logger.Error("failed to create new message", zap.Error(err))
+			return
+		}
+
+	}
+
+	logger.Info("marking step as complete...")
+	_, err = qtx.CompleteStep(ctx, stepRecord.ID)
+	if err != nil {
+		logger.Error("failed to update step", zap.Error(err))
+		return
+	}
+
+	if !orchestrationPlan.isFinalReply() {
+		logger.Info("creating new step...")
+		createStepParams := entities.CreateStepParams{
+			ID:     ulid.Make().String(),
+			RunID:  agent.runRecord.ID,
+			TaskID: agent.task.ID,
+		}
+		_, err = qtx.CreateStep(ctx, createStepParams)
+		if err != nil {
+			logger.Error("failed to create new step", zap.Error(err))
+			return
+		}
+	}
+
+	if orchestrationPlan.isFinalReply() {
+		logger.Info("marking run as complete...")
+		_, err = qtx.CompleteRun(ctx, agent.runRecord.ID)
+		if err != nil {
+			logger.Error("failed to update run", zap.Error(err))
+			return
+		}
 	}
 
 	err = trx.Commit()
@@ -404,125 +444,15 @@ func turnIntoAssistantMessage(
 	return
 }
 
-func (runtime *AgentRuntime) llmResponseToMessage(
-	ctx context.Context,
-	stepId string,
-	task entities.Task,
-	logger *zap.Logger,
-) (
-	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
-	messageId string,
-	err error,
-) {
-
-	if task.StreamMode {
-		logger.Info("getting LLM chunk response...")
-		llmChunkResponseRecords, er := runtime.ConversationHistoryDb.Queries.GetLlmChunkResponseByStep(ctx, stepId)
-		err = er
-		if err != nil {
-			logger.Error("failed to get LLM chunk response", zap.Error(err))
-			return
-		}
-
-		if len(llmChunkResponseRecords) == 0 {
-			logger.Error("no chunks in LLM chunk response")
-			err = fmt.Errorf("no chunks in LLM chunk response")
-			return
-		}
-
-		messageId = llmChunkResponseRecords[0].ID
-
-		acc := openai.ChatCompletionAccumulator{}
-		for _, record := range llmChunkResponseRecords {
-			var chunk openai.ChatCompletionChunk
-			err = json.Unmarshal(record.OpenaiChunkResponse, &chunk)
-			if err != nil {
-				logger.Error("failed to unmarshal llm chunk", zap.Error(err))
-				return
-			}
-			acc.AddChunk(chunk)
-		}
-
-		choices := acc.Choices
-		amountOfChoices := len(choices)
-		if amountOfChoices == 0 {
-			logger.Error("no choices in accumulated LLM chunk response")
-			err = fmt.Errorf("no choices in accumulated LLM chunk response")
-			return
-		}
-
-		if amountOfChoices > 1 {
-			logger.Error("multiple choices in accumulated LLM chunk response", zap.Int("count", amountOfChoices))
-			err = fmt.Errorf("multiple choices in accumulated LLM chunk response")
-			return
-		}
-		choice := choices[0]
-
-		llmResponseAsMessage = choice.Message.ToParam()
-
-	} else {
-		logger.Info("getting LLM response...")
-		llmResponseRecord, er := runtime.ConversationHistoryDb.Queries.GetLlmResponseByStep(ctx, stepId)
-		err = er
-		if err != nil {
-			logger.Error("failed to get LLM response", zap.Error(err))
-			return
-		}
-
-		messageId = llmResponseRecord.ID
-
-		llmResponseJson := llmResponseRecord.OpenaiResponse
-
-		var llmResponse openai.ChatCompletion
-		err = json.Unmarshal(llmResponseJson, &llmResponse)
-		if err != nil {
-			logger.Error("failed to unmarshal llm response", zap.Error(err))
-			return
-		}
-
-		choices := llmResponse.Choices
-		amountOfChoices := len(choices)
-		if amountOfChoices == 0 {
-			logger.Error("no choices in LLM response")
-			err = fmt.Errorf("no choices in LLM response")
-			return
-		}
-
-		if amountOfChoices > 1 {
-			logger.Error("multiple choices in LLM response", zap.Int("count", amountOfChoices))
-			err = fmt.Errorf("multiple choices in LLM response")
-			return
-		}
-		choice := choices[0]
-
-		llmResponseAsMessage = choice.Message.ToParam()
-	}
-	return
-}
-
 func (agent *agenticReActLoop) persistMention(
 	ctx context.Context,
 	qtx *entities.Queries,
-	arguments map[string]interface{},
-	toolCallId string,
-	sourceStep entities.Step,
+	mentionPlan mentionPlan,
 	logger *zap.Logger,
 ) (
-	orchestrationPlan Plan,
+	messageRecord entities.Message,
 	err error,
 ) {
-
-	toMemberName := arguments["agent_name"].(string)
-	if toMemberName == "" {
-		err = InvalidMentionArgumentsError
-		return
-	}
-	message := arguments["message"].(string)
-	if message == "" {
-		err = InvalidMentionArgumentsError
-		return
-	}
-
 	allRoleRecords, err := qtx.GetRoleByChannel(ctx, agent.channel.Name)
 	if err != nil {
 		logger.Error("failed to get user membership", zap.Error(err))
@@ -538,12 +468,12 @@ func (agent *agenticReActLoop) persistMention(
 		channelName:    agent.channel.Name,
 		fromMemberName: agent.member.Name,
 		fromRoleID:     agent.role.ID,
-		toMemberNames:  []string{toMemberName},
-		allMemberNames: []string{toMemberName},
-		message:        message,
+		toMemberNames:  []string{mentionPlan.agentName},
+		allMemberNames: []string{mentionPlan.agentName},
+		message:        mentionPlan.message,
 	}
 
-	orchestrationPlan, err = agent.persistMentionsAndMessage(ctx, qtx, mentions, logger)
+	messageRecord, err = agent.persistMentionsAndMessage(ctx, qtx, mentions, logger)
 	if err != nil {
 		logger.Error("failed to persist mention", zap.Error(err))
 		return
