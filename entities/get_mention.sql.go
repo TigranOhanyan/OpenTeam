@@ -10,7 +10,7 @@ import (
 )
 
 const getMention = `-- name: GetMention :one
-SELECT a.id, a.run_id, a.from_member_task_id, a.to_member_name, a.message FROM mentions a
+SELECT a.id, a.message_id, a.from_member_role_id, a.to_member_name, a.message FROM mentions a
 WHERE a.id = ?
 LIMIT 1
 `
@@ -20,8 +20,8 @@ func (q *Queries) GetMention(ctx context.Context, id string) (Mention, error) {
 	var i Mention
 	err := row.Scan(
 		&i.ID,
-		&i.RunID,
-		&i.FromMemberTaskID,
+		&i.MessageID,
+		&i.FromMemberRoleID,
 		&i.ToMemberName,
 		&i.Message,
 	)

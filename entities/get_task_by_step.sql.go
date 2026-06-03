@@ -20,7 +20,7 @@ WHERE d.id = COALESCE(
 LIMIT 1
 `
 
-func (q *Queries) GetTaskByStep(ctx context.Context, stepID string) (Task, error) {
+func (q *Queries) GetTaskByStep(ctx context.Context, stepID interface{}) (Task, error) {
 	row := q.db.QueryRowContext(ctx, getTaskByStep, stepID)
 	var i Task
 	err := row.Scan(

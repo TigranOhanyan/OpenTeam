@@ -10,17 +10,22 @@ import (
 )
 
 const createRun = `-- name: CreateRun :one
-INSERT INTO runs (id, source_step_id) VALUES (?, ?) RETURNING id, source_step_id, created_at
+INSERT INTO runs (id, mention_id) VALUES (?, ?) RETURNING id, mention_id, status, created_at
 `
 
 type CreateRunParams struct {
-	ID           string `json:"id"`
-	SourceStepID string `json:"source_step_id"`
+	ID        string `json:"id"`
+	MentionID string `json:"mention_id"`
 }
 
 func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, error) {
-	row := q.db.QueryRowContext(ctx, createRun, arg.ID, arg.SourceStepID)
+	row := q.db.QueryRowContext(ctx, createRun, arg.ID, arg.MentionID)
 	var i Run
-	err := row.Scan(&i.ID, &i.SourceStepID, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.MentionID,
+		&i.Status,
+		&i.CreatedAt,
+	)
 	return i, err
 }

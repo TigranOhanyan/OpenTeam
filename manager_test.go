@@ -44,7 +44,7 @@ func Test_TeamDbFactory_should_reconstitute_from_file(t *testing.T) {
 
 	ctx := context.TODO()
 
-	originalFileName := ulid.Make().String() + ".db"
+	originalFileName := "Manager_" + ulid.Make().String() + ".db"
 
 	teamDb, err := teamDbFactory.NewTeamDb(ctx, originalFileName, testLogger)
 	assert.NoError(t, err)
@@ -148,7 +148,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		RoleID:      janeLobbyRole.ID,
 		Instruction: "You are a first impression in the lobby.",
 		Model:       "gpt-5",
-		StreamMode:  false,
+		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -161,7 +161,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		PrevID:      sql.NullString{String: janeLobbyFirstImpression.ID, Valid: true},
 		Instruction: "You are a decision maker in the lobby.",
 		Model:       "gpt-5",
-		StreamMode:  false,
+		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -174,7 +174,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		PrevID:      sql.NullString{String: janeLobbyDecisionMake.ID, Valid: true},
 		Instruction: "You are a coordinator in the war room.",
 		Model:       "gpt-5",
-		StreamMode:  false,
+		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -196,7 +196,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		RoleID:      johnWarRoomRole.ID,
 		Instruction: "You are a expert in the war room.",
 		Model:       "gpt-5",
-		StreamMode:  false,
+		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -218,7 +218,7 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		RoleID:      jimLobbyRole.ID,
 		Instruction: "You are the user.",
 		Model:       "gpt-5",
-		StreamMode:  false,
+		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))

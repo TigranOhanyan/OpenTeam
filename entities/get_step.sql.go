@@ -10,7 +10,7 @@ import (
 )
 
 const getStep = `-- name: GetStep :one
-SELECT id, run_id, kind, created_at FROM steps WHERE id = ? LIMIT 1
+SELECT id, run_id, task_id, status, created_at FROM steps WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetStep(ctx context.Context, id string) (Step, error) {
@@ -19,7 +19,8 @@ func (q *Queries) GetStep(ctx context.Context, id string) (Step, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.RunID,
-		&i.Kind,
+		&i.TaskID,
+		&i.Status,
 		&i.CreatedAt,
 	)
 	return i, err

@@ -10,12 +10,17 @@ import (
 )
 
 const getRun = `-- name: GetRun :one
-SELECT id, source_step_id, created_at FROM runs WHERE id = ? LIMIT 1
+SELECT id, mention_id, status, created_at FROM runs WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
 	row := q.db.QueryRowContext(ctx, getRun, id)
 	var i Run
-	err := row.Scan(&i.ID, &i.SourceStepID, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.MentionID,
+		&i.Status,
+		&i.CreatedAt,
+	)
 	return i, err
 }

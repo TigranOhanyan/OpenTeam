@@ -1,2 +1,2 @@
 -- name: CreateStep :one
-INSERT INTO steps (id, run_id, kind) VALUES (?, ?, ?) RETURNING *;
+INSERT INTO steps (id, run_id, task_id) VALUES (?, ?, ?) RETURNING *;

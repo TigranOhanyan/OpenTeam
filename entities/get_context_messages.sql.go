@@ -19,9 +19,9 @@ ORDER BY created_at ASC
 `
 
 type GetContextMessagesParams struct {
-	TaskID      string `json:"task_id"`
-	RoleID      string `json:"role_id"`
-	ChannelName string `json:"channel_name"`
+	TaskID      interface{} `json:"task_id"`
+	RoleID      string      `json:"role_id"`
+	ChannelName string      `json:"channel_name"`
 }
 
 func (q *Queries) GetContextMessages(ctx context.Context, arg GetContextMessagesParams) ([]Message, error) {

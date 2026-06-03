@@ -10,22 +10,23 @@ import (
 )
 
 const createStep = `-- name: CreateStep :one
-INSERT INTO steps (id, run_id, kind) VALUES (?, ?, ?) RETURNING id, run_id, kind, created_at
+INSERT INTO steps (id, run_id, task_id) VALUES (?, ?, ?) RETURNING id, run_id, task_id, status, created_at
 `
 
 type CreateStepParams struct {
-	ID    string      `json:"id"`
-	RunID interface{} `json:"run_id"`
-	Kind  string      `json:"kind"`
+	ID     string `json:"id"`
+	RunID  string `json:"run_id"`
+	TaskID string `json:"task_id"`
 }
 
 func (q *Queries) CreateStep(ctx context.Context, arg CreateStepParams) (Step, error) {
-	row := q.db.QueryRowContext(ctx, createStep, arg.ID, arg.RunID, arg.Kind)
+	row := q.db.QueryRowContext(ctx, createStep, arg.ID, arg.RunID, arg.TaskID)
 	var i Step
 	err := row.Scan(
 		&i.ID,
 		&i.RunID,
-		&i.Kind,
+		&i.TaskID,
+		&i.Status,
 		&i.CreatedAt,
 	)
 	return i, err

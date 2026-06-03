@@ -31,7 +31,7 @@ func Test_Agent_should_call_llm_when_reasoning_in_stream_mode(t *testing.T) {
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_when_reasoning.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_when_reasoning_in_stream_mode.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
@@ -116,7 +116,7 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_for_the_followup_conversation_when_reasoning.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_stream_mode.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
@@ -262,7 +262,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_first_message_when_reasoning.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_first_message_when_reasoning_in_stream_mode.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
@@ -386,7 +386,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_reasoning.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_reasoning_in_stream_mode.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()

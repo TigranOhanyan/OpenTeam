@@ -15,17 +15,16 @@ import (
 
 const everyonePrefix string = "Everyone! "
 
-type mention struct {
+type mentions struct {
 	channelName    string
 	fromMemberName string
 	fromRoleID     string
-	fromTaskID     string
 	toMemberNames  []string
 	allMemberNames []string
 	message        string
 }
 
-func (mention mention) addressingToPrefix() (prefix string) {
+func (mention mentions) addressingToPrefix() (prefix string) {
 
 	allNamesExceptAuthor := make(map[string]struct{})
 	for _, memberName := range mention.allMemberNames {
@@ -68,13 +67,11 @@ func (mention mention) addressingToPrefix() (prefix string) {
 
 }
 
-func (mention mention) persistMessage(
+func (mention mentions) createMessageParams(
 	ctx context.Context,
-	qtx *entities.Queries,
-	stepRecord entities.Step,
 	logger *zap.Logger,
 ) (
-	messageId string,
+	createMessageParams entities.CreateMessageParams,
 	err error,
 ) {
 
@@ -95,85 +92,13 @@ func (mention mention) persistMessage(
 		return
 	}
 
-	createMessageParams := entities.CreateMessageParams{
+	createMessageParams = entities.CreateMessageParams{
 		ID:            ulid.Make().String(),
 		OpenaiMessage: json.RawMessage(openAiMessageBytes),
 		Visibility:    string(VisibilityChannel),
-		StepID:        stepRecord.ID,
 		ChannelName:   mention.channelName,
 		RoleID:        mention.fromRoleID,
-		TaskID:        mention.fromTaskID,
-	}
-	_, err = qtx.CreateMessage(ctx, createMessageParams)
-	if err != nil {
-		logger.Error("failed to create new message", zap.Error(err))
-		return
-	}
-
-	messageId = ulid.Make().String()
-	return
-}
-
-func (runtime *AgentRuntime) persistMentions(
-	ctx context.Context,
-	qtx *entities.Queries,
-	mention mention,
-	sourceStep entities.Step,
-	logger *zap.Logger,
-) (
-	orchestrationPlan Plan,
-	err error,
-) {
-
-	for _, roleRecord := range mention.toMemberNames {
-		if roleRecord == mention.fromMemberName {
-			continue
-		}
-
-		toMemberRecord, er := qtx.GetMember(ctx, roleRecord)
-		err = er
-		if err != nil {
-			logger.Error("failed to get agent member", zap.Error(err))
-			return
-		}
-
-		nextRunRecord, er := createRun(ctx, qtx, sourceStep.ID, logger)
-		err = er
-		if err != nil {
-			logger.Error("failed to create run", zap.Error(err))
-			return
-		}
-
-		createMentionParams := entities.CreateMentionParams{
-			ID:               ulid.Make().String(),
-			RunID:            nextRunRecord.ID,
-			FromMemberTaskID: mention.fromTaskID,
-			ToMemberName:     toMemberRecord.Name,
-			Message:          mention.message,
-		}
-
-		mentionRecord, er := qtx.CreateMention(ctx, createMentionParams)
-		err = er
-		if err != nil {
-			logger.Error("failed to create mention", zap.Error(err))
-			return
-		}
-
-		if runtime.ChangeStream != nil {
-
-			runtime.ChangeStream <- ChangeEvent{
-				Kind:        CdcEventKindMention,
-				RunID:       nextRunRecord.ID,
-				StepID:      sourceStep.ID,
-				ChannelName: mention.channelName,
-				MemberName:  toMemberRecord.Name,
-				TaskID:      mention.fromTaskID,
-				Mention:     &mentionRecord,
-			}
-		}
-		orchestrationPlan.mentionRecords = append(orchestrationPlan.mentionRecords, mentionRecord)
 	}
 
 	return
-
 }

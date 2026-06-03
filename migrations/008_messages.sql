@@ -1,10 +1,10 @@
 -- +goose Up
 CREATE TABLE messages (
     id TEXT PRIMARY KEY,
-    step_id TEXT NOT NULL,
+    step_id TEXT NULL,
     channel_name TEXT NOT NULL,
     role_id TEXT NOT NULL,
-    task_id TEXT NOT NULL,
+    task_id TEXT NULL,
     visibility TEXT NOT NULL CHECK (visibility IN ('channel', 'role', 'task')),
     openai_message JSON NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -1,7 +1,8 @@
 -- +goose Up
 CREATE TABLE runs (
     id TEXT PRIMARY KEY,
-    source_step_id TEXT NOT NULL,
+    mention_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('pending', 'completed')) DEFAULT 'pending',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (source_step_id) REFERENCES steps(id)
+    FOREIGN KEY (mention_id) REFERENCES mentions(id)
 );

@@ -13,7 +13,7 @@ const getMessageByStep = `-- name: GetMessageByStep :one
 SELECT id, step_id, channel_name, role_id, task_id, visibility, openai_message, created_at FROM messages WHERE step_id = ? LIMIT 1
 `
 
-func (q *Queries) GetMessageByStep(ctx context.Context, stepID string) (Message, error) {
+func (q *Queries) GetMessageByStep(ctx context.Context, stepID interface{}) (Message, error) {
 	row := q.db.QueryRowContext(ctx, getMessageByStep, stepID)
 	var i Message
 	err := row.Scan(

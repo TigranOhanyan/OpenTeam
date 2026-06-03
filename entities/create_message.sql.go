@@ -17,10 +17,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, step_id, channel_name, role_id, task_
 
 type CreateMessageParams struct {
 	ID            string          `json:"id"`
-	StepID        string          `json:"step_id"`
+	StepID        interface{}     `json:"step_id"`
 	ChannelName   string          `json:"channel_name"`
 	RoleID        string          `json:"role_id"`
-	TaskID        string          `json:"task_id"`
+	TaskID        interface{}     `json:"task_id"`
 	Visibility    string          `json:"visibility"`
 	OpenaiMessage json.RawMessage `json:"openai_message"`
 }

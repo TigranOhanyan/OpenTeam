@@ -14,7 +14,7 @@ func (runtime *AgentRuntime) Ask(
 	message string,
 	logger *zap.Logger,
 ) (
-	askingStepId string,
+	messageId string,
 	err error,
 ) {
 	defer func() {
@@ -53,12 +53,6 @@ func (runtime *AgentRuntime) Ask(
 		return
 	}
 
-	taskRecord, err := qtx.GetFirstTask(ctx, roleRecord.ID)
-	if err != nil {
-		logger.Error("failed to get user persona", zap.Error(err))
-		return
-	}
-
 	allRoleRecords, err := qtx.GetRoleByChannel(ctx, channelRecord.Name)
 	if err != nil {
 		logger.Error("failed to get user membership", zap.Error(err))
@@ -70,30 +64,16 @@ func (runtime *AgentRuntime) Ask(
 		allMembersName[i] = roleRecord.MemberName
 	}
 
-	askingStepRecord, er := createStep(ctx, qtx, EventKindAsking, nil, logger)
-	err = er
-	if err != nil {
-		logger.Error("failed to create mention step", zap.Error(err))
-		return
-	}
-
-	mention := mention{
+	mention := mentions{
 		channelName:    channelRecord.Name,
 		fromMemberName: memberName,
 		fromRoleID:     roleRecord.ID,
-		fromTaskID:     taskRecord.ID,
 		toMemberNames:  allMembersName,
 		allMemberNames: allMembersName,
 		message:        message,
 	}
 
-	_, err = mention.persistMessage(ctx, qtx, askingStepRecord, logger)
-	if err != nil {
-		logger.Error("failed to persist message", zap.Error(err))
-		return
-	}
-
-	_, err = runtime.persistMentions(ctx, qtx, mention, askingStepRecord, logger)
+	messageRecord, err := runtime.persistMentionsAndMessage(ctx, qtx, mention, logger)
 	if err != nil {
 		logger.Error("failed to persist mentions", zap.Error(err))
 		return
@@ -105,7 +85,7 @@ func (runtime *AgentRuntime) Ask(
 		return
 	}
 
-	askingStepId = askingStepRecord.ID
+	messageId = messageRecord.ID
 
 	return
 

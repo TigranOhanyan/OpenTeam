@@ -33,6 +33,7 @@ type Handoff struct {
 type LlmChunkResponse struct {
 	ID                  string          `json:"id"`
 	SequenceNumber      int64           `json:"sequence_number"`
+	RunID               string          `json:"run_id"`
 	StepID              string          `json:"step_id"`
 	TaskID              string          `json:"task_id"`
 	OpenaiChunkResponse json.RawMessage `json:"openai_chunk_response"`
@@ -54,18 +55,18 @@ type Member struct {
 
 type Mention struct {
 	ID               string `json:"id"`
-	RunID            string `json:"run_id"`
-	FromMemberTaskID string `json:"from_member_task_id"`
+	MessageID        string `json:"message_id"`
+	FromMemberRoleID string `json:"from_member_role_id"`
 	ToMemberName     string `json:"to_member_name"`
 	Message          string `json:"message"`
 }
 
 type Message struct {
 	ID            string          `json:"id"`
-	StepID        string          `json:"step_id"`
+	StepID        interface{}     `json:"step_id"`
 	ChannelName   string          `json:"channel_name"`
 	RoleID        string          `json:"role_id"`
-	TaskID        string          `json:"task_id"`
+	TaskID        interface{}     `json:"task_id"`
 	Visibility    string          `json:"visibility"`
 	OpenaiMessage json.RawMessage `json:"openai_message"`
 	CreatedAt     time.Time       `json:"created_at"`
@@ -78,22 +79,25 @@ type Role struct {
 }
 
 type Run struct {
-	ID           string    `json:"id"`
-	SourceStepID string    `json:"source_step_id"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID        string    `json:"id"`
+	MentionID string    `json:"mention_id"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type RunLink struct {
+	ParentRunID    string    `json:"parent_run_id"`
+	ChildRunID     string    `json:"child_run_id"`
+	SpawningStepID string    `json:"spawning_step_id"`
+	LinkedAt       time.Time `json:"linked_at"`
 }
 
 type Step struct {
-	ID        string      `json:"id"`
-	RunID     interface{} `json:"run_id"`
-	Kind      string      `json:"kind"`
-	CreatedAt time.Time   `json:"created_at"`
-}
-
-type StepLink struct {
-	PrevID   string       `json:"prev_id"`
-	NextID   string       `json:"next_id"`
-	LinkedAt sql.NullTime `json:"linked_at"`
+	ID        string    `json:"id"`
+	RunID     string    `json:"run_id"`
+	TaskID    string    `json:"task_id"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Task struct {

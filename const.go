@@ -17,7 +17,6 @@ const (
 type EventKind string
 
 const (
-	EventKindObserving EventKind = "observing"
 	EventKindAsking    EventKind = "asking"
 	EventKindReasoning EventKind = "reasoning"
 	EventKindActing    EventKind = "acting"
