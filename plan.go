@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/bytedance/gopkg/util/logger"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
-	"go.uber.org/zap"
 )
 
 type plan struct {
@@ -52,7 +50,6 @@ func (plan *plan) parse(
 		var args map[string]interface{}
 		err = json.Unmarshal([]byte(function.Function.Arguments), &args)
 		if err != nil {
-			logger.Error("failed to unmarshal articulattion", zap.Error(err))
 			return
 		}
 		if strings.EqualFold(function.Function.Name, mentionMemberFunction.Name) {

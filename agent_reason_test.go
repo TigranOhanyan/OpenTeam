@@ -99,13 +99,12 @@ func Test_Agent_should_call_llm_when_reasoning(t *testing.T) {
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	askingMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, askingStepId)
-	reply, err := agent.Run(ctx, askingStepId, testLogger)
-	assert.NotNil(t, reply)
-	assert.Equal(t, 1, len(reply.ReplyStepIds))
-	actualReplyStepId := reply.ReplyStepIds[0]
+	assert.NotEmpty(t, askingMessageId)
+	executedRuns, err := agent.Run(ctx, testLogger)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(executedRuns.RunIds))
 
 	actualReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualReplyStepId)
 	assert.NoError(t, err)
