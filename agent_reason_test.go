@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
-	"github.com/openai/openai-go/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/wiremock/go-wiremock"
 )
@@ -99,20 +98,11 @@ func Test_Agent_should_call_llm_when_reasoning(t *testing.T) {
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	askingMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, askingMessageId)
 	executedRuns, err := agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(executedRuns.RunIds))
-
-	actualReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualReplyStepId)
-	assert.NoError(t, err)
-	assert.Equal(t, actualReplyMessage.Visibility, string(VisibilityChannel))
-	actualReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
-	err = json.Unmarshal(actualReplyMessage.OpenaiMessage, &actualReplyOpenAiMessage)
-	actualContent := actualReplyOpenAiMessage.OfUser.Content.OfString.Value
-	assert.Equal(t, "Hi! I am Jane.", actualContent)
 
 	verifyRequestStub, err := wiremockClient.Verify(requestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -201,21 +191,11 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, firstAskingStepId)
-	firstReply, err := agent.Run(ctx, firstAskingStepId, testLogger)
+	firstExecutedRuns, err := agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstReply.ReplyStepIds))
-	actualFirstReplyStepId := firstReply.ReplyStepIds[0]
-
-	actualFirstReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualFirstReplyStepId)
-	assert.NoError(t, err)
-	assert.Equal(t, actualFirstReplyMessage.Visibility, string(VisibilityChannel))
-	actualFirstReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
-	err = json.Unmarshal(actualFirstReplyMessage.OpenaiMessage, &actualFirstReplyOpenAiMessage)
-	actualContent := actualFirstReplyOpenAiMessage.OfUser.Content.OfString.Value
-	assert.Equal(t, "Hi! I am Jane.", actualContent)
+	assert.Equal(t, 1, len(firstExecutedRuns.RunIds))
 
 	secondRequestBodyJson :=
 		`{
@@ -278,22 +258,11 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	_, err = agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, secondAskingStepId)
-	secondReply, err := agent.Run(ctx, secondAskingStepId, testLogger)
+	secondExecutedRuns, err := agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.NotNil(t, secondReply)
-	assert.Equal(t, 1, len(secondReply.ReplyStepIds))
-	actualSecondReplyStepId := secondReply.ReplyStepIds[0]
-
-	actualSecondReplyMessage, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondReplyStepId)
-	assert.NoError(t, err)
-	assert.Equal(t, actualSecondReplyMessage.Visibility, string(VisibilityChannel))
-	actualSecondReplyOpenAiMessage := openai.ChatCompletionMessageParamUnion{}
-	err = json.Unmarshal(actualSecondReplyMessage.OpenaiMessage, &actualSecondReplyOpenAiMessage)
-	actualContent = actualSecondReplyOpenAiMessage.OfUser.Content.OfString.Value
-	assert.Equal(t, "I'm fine, thank you!", actualContent)
+	assert.Equal(t, 1, len(secondExecutedRuns.RunIds))
 
 	verifyFirstRequestStub, err := wiremockClient.Verify(firstRequestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -386,58 +355,54 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	askingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, askingStepId)
-	reply, err := agent.Run(ctx, askingStepId, testLogger)
-	assert.NoError(t, err)
-	assert.NotNil(t, reply)
-	assert.Equal(t, 1, len(reply.ReplyStepIds))
-
-	allSteps, err := teamDb.Queries.GetSteps(ctx)
+	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	actualRunRecords, err := teamDb.Queries.GetRunsBySourceStep(ctx, askingStepId)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(actualRunRecords))
-	actualRunId := actualRunRecords[0].ID
+	startOfChecking := time.Now()
+	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualStep1 := allSteps[0]
-	assert.Equal(t, actualStep1.Kind, string(EventKindAsking))
-	assert.Nil(t, actualStep1.RunID)
-	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep1.ID)
+	assert.NotEmpty(t, userMessageId)
+	executedRuns, err := agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
-	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
-	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
+	assert.Equal(t, 1, len(executedRuns.RunIds))
 
-	actualStep2 := allSteps[1]
-	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
-	assert.Equal(t, actualStep2.RunID, actualRunId)
+	actualRunId := executedRuns.RunIds[0]
 
-	actualStep3 := allSteps[2]
-	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
-	assert.Equal(t, actualStep3.RunID, actualRunId)
-	actualLlmResponse1, err := teamDb.Queries.GetLlmResponseByStep(ctx, actualStep3.ID)
+	actualRunRecord, err := teamDb.Queries.GetRun(ctx, actualRunId)
 	assert.NoError(t, err)
-	actualLlmResponse1Json, err := json.Marshal(actualLlmResponse1.OpenaiResponse)
-	assert.NoError(t, err)
-	assert.JSONEq(t, responseBodyJson, string(actualLlmResponse1Json))
+	assert.Equal(t, actualRunRecord.Status, "completed")
+	assert.WithinRange(t, actualRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualStep4 := allSteps[3]
-	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
-	assert.Equal(t, actualStep4.RunID, actualRunId)
-	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
+	actualMentionRecord, err := teamDb.Queries.GetMention(ctx, actualRunRecord.MentionID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
-	actualReplying1Json, err := json.Marshal(actualReplying1.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedReplying1Json := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
-	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
+	assert.Equal(t, actualMentionRecord.MessageID, userMessageId)
+	assert.Equal(t, actualMentionRecord.FromMemberRoleID, "jim-at-lobby")
+	assert.Equal(t, actualMentionRecord.ToMemberName, "Jane")
+	assert.Equal(t, actualMentionRecord.Message, "Hello!")
 
-	assert.Len(t, allSteps, 4)
+	actualUserMessageRecord, err := teamDb.Queries.GetMessage(ctx, actualMentionRecord.MessageID)
+	assert.NoError(t, err)
+	assert.Equal(t, actualUserMessageRecord.Visibility, string(VisibilityChannel))
+	actualUserMessageRecordJson, err := json.Marshal(actualUserMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
+	assert.JSONEq(t, expectedUserMessageRecordJson, string(actualUserMessageRecordJson))
+
+	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualRunId)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(allSteps))
+	actualStepRecord := allSteps[0]
+	assert.Equal(t, actualStepRecord.Status, "completed")
+	assert.WithinRange(t, actualStepRecord.CreatedAt, startOfTest, startOfChecking)
+	assert.Equal(t, actualStepRecord.TaskID, "jane-lobby-first-impression")
+
+	actualAgentMessageRecord, err := teamDb.Queries.GetMessageByStep(ctx, actualStepRecord.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, actualAgentMessageRecord.Visibility, string(VisibilityChannel))
+	actualAgentMessageRecordJson, err := json.Marshal(actualAgentMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`)
+	assert.JSONEq(t, expectedAgentMessageRecordJson, string(actualAgentMessageRecordJson))
 
 }
 
@@ -522,10 +487,12 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, firstAskingStepId)
-	_, err = agent.Run(ctx, firstAskingStepId, testLogger)
+	assert.NotEmpty(t, firstUserMessageId)
+	firstExecutedRuns, err := agent.Run(ctx, testLogger)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(firstExecutedRuns.RunIds))
 	assert.NoError(t, err)
 
 	secondRequestBodyJson :=
@@ -589,96 +556,87 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondAskingStepId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, secondAskingStepId)
-	_, err = agent.Run(ctx, secondAskingStepId, testLogger)
+	assert.NotEmpty(t, secondUserMessageId)
+	secondExecutedRuns, err := agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-
-	actualFirstRunRecords, err := teamDb.Queries.GetRunsBySourceStep(ctx, firstAskingStepId)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(actualFirstRunRecords))
-	actualFirstRunId := actualFirstRunRecords[0].ID
-
-	actualSecondRunRecords, err := teamDb.Queries.GetRunsBySourceStep(ctx, secondAskingStepId)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(actualSecondRunRecords))
-	actualSecondRunId := actualSecondRunRecords[0].ID
-
-	allSteps, err := teamDb.Queries.GetSteps(ctx)
+	assert.Equal(t, 1, len(secondExecutedRuns.RunIds))
 	assert.NoError(t, err)
 
-	actualStep1 := allSteps[0]
-	assert.Equal(t, actualStep1.Kind, string(EventKindAsking))
-	assert.Nil(t, actualStep1.RunID)
-	actualMessage1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep1.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualMessage1.Visibility, string(VisibilityChannel))
-	actualMessage1Json, err := json.Marshal(actualMessage1.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedMessage1Json := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
-	assert.JSONEq(t, expectedMessage1Json, string(actualMessage1Json))
+	startOfChecking := time.Now()
+	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualStep2 := allSteps[1]
-	assert.Equal(t, actualStep2.Kind, string(EventKindObserving))
-	assert.Equal(t, actualStep2.RunID, actualFirstRunId)
+	actualFirstRunId := firstExecutedRuns.RunIds[0]
+	actualFirstRunRecord, err := teamDb.Queries.GetRun(ctx, actualFirstRunId)
+	assert.NoError(t, err)
+	assert.Equal(t, actualFirstRunRecord.Status, "completed")
+	assert.WithinRange(t, actualFirstRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualStep3 := allSteps[2]
-	assert.Equal(t, actualStep3.Kind, string(EventKindReasoning))
-	assert.Equal(t, actualStep3.RunID, actualFirstRunId)
-	actualLlmResponse1, err := teamDb.Queries.GetLlmResponseByStep(ctx, actualStep3.ID)
+	actualFirstMentionRecord, err := teamDb.Queries.GetMention(ctx, actualFirstRunRecord.MentionID)
 	assert.NoError(t, err)
-	actualLlmResponse1Json, err := json.Marshal(actualLlmResponse1.OpenaiResponse)
+	assert.Equal(t, actualFirstMentionRecord.MessageID, firstUserMessageId)
+	assert.Equal(t, actualFirstMentionRecord.FromMemberRoleID, "jim-at-lobby")
+	assert.Equal(t, actualFirstMentionRecord.ToMemberName, "Jane")
+	assert.Equal(t, actualFirstMentionRecord.Message, "Hello!")
+	actualFirstUserMessageRecord, err := teamDb.Queries.GetMessage(ctx, actualFirstMentionRecord.MessageID)
 	assert.NoError(t, err)
-	assert.JSONEq(t, firstResponseBodyJson, string(actualLlmResponse1Json))
+	assert.Equal(t, actualFirstUserMessageRecord.Visibility, string(VisibilityChannel))
+	actualFirstUserMessageRecordJson, err := json.Marshal(actualFirstUserMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedFirstUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
+	assert.JSONEq(t, expectedFirstUserMessageRecordJson, string(actualFirstUserMessageRecordJson))
 
-	actualStep4 := allSteps[3]
-	assert.Equal(t, actualStep4.Kind, string(EventKindActing))
-	assert.Equal(t, actualStep4.RunID, actualFirstRunId)
-	actualReplying1, err := teamDb.Queries.GetMessageByStep(ctx, actualStep4.ID)
+	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunId)
 	assert.NoError(t, err)
-	assert.Equal(t, actualReplying1.Visibility, string(VisibilityChannel))
-	actualReplying1Json, err := json.Marshal(actualReplying1.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedReplying1Json := `{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`
-	assert.JSONEq(t, expectedReplying1Json, string(actualReplying1Json))
+	assert.Equal(t, 1, len(allFirstSteps))
+	actualFirstStepRecord := allFirstSteps[0]
+	assert.Equal(t, actualFirstStepRecord.Status, "completed")
+	assert.WithinRange(t, actualFirstStepRecord.CreatedAt, startOfTest, startOfChecking)
+	assert.Equal(t, actualFirstStepRecord.TaskID, "jane-lobby-first-impression")
 
-	actualStep5 := allSteps[4]
-	assert.Equal(t, actualStep5.Kind, string(EventKindAsking))
-	assert.Nil(t, actualStep5.RunID)
-	actualMessage2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep5.ID)
+	actualFirstAgentMessageRecord, err := teamDb.Queries.GetMessageByStep(ctx, actualFirstStepRecord.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, actualMessage2.Visibility, string(VisibilityChannel))
-	actualMessage2Json, err := json.Marshal(actualMessage2.OpenaiMessage)
+	assert.Equal(t, actualFirstAgentMessageRecord.Visibility, string(VisibilityChannel))
+	actualFirstAgentMessageRecordJson, err := json.Marshal(actualFirstAgentMessageRecord.OpenaiMessage)
 	assert.NoError(t, err)
-	expectedMessage2Json := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
-	assert.JSONEq(t, expectedMessage2Json, string(actualMessage2Json))
+	expectedFirstAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`)
+	assert.JSONEq(t, expectedFirstAgentMessageRecordJson, string(actualFirstAgentMessageRecordJson))
 
-	actualStep6 := allSteps[5]
-	assert.Equal(t, actualStep6.Kind, string(EventKindObserving))
-	assert.Equal(t, actualStep6.RunID, actualSecondRunId)
+	actualSecondRunId := secondExecutedRuns.RunIds[0]
+	actualSecondRunRecord, err := teamDb.Queries.GetRun(ctx, actualSecondRunId)
+	assert.NoError(t, err)
+	assert.Equal(t, actualSecondRunRecord.Status, "completed")
+	assert.WithinRange(t, actualSecondRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualStep7 := allSteps[6]
-	assert.Equal(t, actualStep7.Kind, string(EventKindReasoning))
-	assert.Equal(t, actualStep7.RunID, actualSecondRunId)
-	actualLlmResponse2, err := teamDb.Queries.GetLlmResponseByStep(ctx, actualStep7.ID)
+	actualSecondMentionRecord, err := teamDb.Queries.GetMention(ctx, actualSecondRunRecord.MentionID)
 	assert.NoError(t, err)
-	actualLlmResponse2Json, err := json.Marshal(actualLlmResponse2.OpenaiResponse)
+	assert.Equal(t, actualSecondMentionRecord.MessageID, secondUserMessageId)
+	assert.Equal(t, actualSecondMentionRecord.FromMemberRoleID, "jim-at-lobby")
+	assert.Equal(t, actualSecondMentionRecord.ToMemberName, "Jane")
+	assert.Equal(t, actualSecondMentionRecord.Message, "How are you?")
+	actualSecondUserMessageRecord, err := teamDb.Queries.GetMessage(ctx, actualSecondMentionRecord.MessageID)
 	assert.NoError(t, err)
-	assert.JSONEq(t, secondResponseBodyJson, string(actualLlmResponse2Json))
+	assert.Equal(t, actualSecondUserMessageRecord.Visibility, string(VisibilityChannel))
+	actualSecondUserMessageRecordJson, err := json.Marshal(actualSecondUserMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedSecondUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
+	assert.JSONEq(t, expectedSecondUserMessageRecordJson, string(actualSecondUserMessageRecordJson))
 
-	actualStep8 := allSteps[7]
-	assert.Equal(t, actualStep8.Kind, string(EventKindActing))
-	assert.Equal(t, actualStep8.RunID, actualSecondRunId)
-	actualReplying2, err := teamDb.Queries.GetMessageByStep(ctx, actualStep8.ID)
+	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunId)
 	assert.NoError(t, err)
-	assert.Equal(t, actualReplying2.Visibility, string(VisibilityChannel))
-	actualReplying2Json, err := json.Marshal(actualReplying2.OpenaiMessage)
+	assert.Equal(t, 1, len(allSecondSteps))
+	actualSecondStepRecord := allSecondSteps[0]
+	assert.Equal(t, actualSecondStepRecord.Status, "completed")
+	assert.WithinRange(t, actualSecondStepRecord.CreatedAt, startOfTest, startOfChecking)
+	assert.Equal(t, actualSecondStepRecord.TaskID, "jane-lobby-first-impression")
+	actualSecondAgentMessageRecord, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondStepRecord.ID)
 	assert.NoError(t, err)
-	expectedReplying2Json := `{"name":"Jane","content":"I'm fine, thank you!","role":"user"}`
-	assert.JSONEq(t, expectedReplying2Json, string(actualReplying2Json))
-
-	assert.Len(t, allSteps, 8)
+	assert.Equal(t, actualSecondAgentMessageRecord.Visibility, string(VisibilityChannel))
+	actualSecondAgentMessageRecordJson, err := json.Marshal(actualSecondAgentMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedSecondAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"I'm fine, thank you!","role":"user"}`)
+	assert.JSONEq(t, expectedSecondAgentMessageRecordJson, string(actualSecondAgentMessageRecordJson))
 
 }
 

@@ -65,25 +65,6 @@ func (runtime *AgentRuntime) createAgent(
 		return
 	}
 
-	var pendingStepRecord entities.Step
-	if len(pendingStepRecords) == 1 {
-
-		pendingStepRecord = pendingStepRecords[0]
-
-	} else {
-		pendingStepRecord, err = createStep(ctx, qtx, runRecord.ID, logger)
-		if err != nil {
-			logger.Error("failed to create pending step", zap.Error(err))
-			return
-		}
-
-		if err != nil {
-			logger.Error("failed to create pending step", zap.Error(err))
-			return
-		}
-
-	}
-
 	mentionRecord, err := qtx.GetMention(ctx, runRecord.MentionID)
 	if err != nil {
 		logger.Error("failed to get mention", zap.Error(err))
@@ -125,6 +106,25 @@ func (runtime *AgentRuntime) createAgent(
 	if err != nil {
 		logger.Error("failed to get to persona", zap.Error(err))
 		return
+	}
+
+	var pendingStepRecord entities.Step
+	if len(pendingStepRecords) == 1 {
+
+		pendingStepRecord = pendingStepRecords[0]
+
+	} else {
+		pendingStepRecord, err = createStep(ctx, qtx, runRecord.ID, taskRecord.ID, logger)
+		if err != nil {
+			logger.Error("failed to create pending step", zap.Error(err))
+			return
+		}
+
+		if err != nil {
+			logger.Error("failed to create pending step", zap.Error(err))
+			return
+		}
+
 	}
 
 	agent = &agenticReActLoop{
