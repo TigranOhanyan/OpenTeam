@@ -279,12 +279,12 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	startOfChecking := time.Now()
-	startOfChecking = startOfChecking.Add(time.Second)
-
 	executedRuns, err := agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(executedRuns.RunIds))
+
+	startOfChecking := time.Now()
+	startOfChecking = startOfChecking.Add(time.Second)
 
 	actualRunId := executedRuns.RunIds[0]
 	actualRunRecord, err := teamDb.Queries.GetRun(ctx, actualRunId)
@@ -449,12 +449,12 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	secondUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
 
-	startOfChecking := time.Now()
-	startOfChecking = startOfChecking.Add(time.Second)
-
 	secondExecutedRuns, err := agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(secondExecutedRuns.RunIds))
+
+	startOfChecking := time.Now()
+	startOfChecking = startOfChecking.Add(time.Second)
 
 	actualFirstRunId := firstExecutedRuns.RunIds[0]
 	actualFirstRunRecord, err := teamDb.Queries.GetRun(ctx, actualFirstRunId)

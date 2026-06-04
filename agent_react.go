@@ -50,7 +50,7 @@ func (agent *agenticReActLoop) reAct(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		turnIntoAssistantMessage(&openAiMessage, agent.member.Name)
+		openAiMessage = turnIntoAssistantMessage(openAiMessage, agent.member.Name)
 		openAiMessages[i] = openAiMessage
 	}
 
@@ -120,9 +120,9 @@ func (agent *agenticReActLoop) reAct(
 	if orchestrationPlan.hasMessage {
 		logger.Info("persisting message...")
 
-		turnIntoUserMessage(&llmResponseAsMessage)
+		userLlmResponseAsMessage := turnIntoUserMessage(llmResponseAsMessage)
 
-		filteredLlmResponseAsMessage := filterControlToolCalls(llmResponseAsMessage)
+		filteredLlmResponseAsMessage := filterControlToolCalls(userLlmResponseAsMessage)
 
 		filteredLlmResponseAsMessageBytes, er := json.Marshal(filteredLlmResponseAsMessage)
 		err = er
@@ -399,20 +399,20 @@ func (agent *agenticReActLoop) reasonInOneShotMode(
 }
 
 func turnIntoAssistantMessage(
-	message *openai.ChatCompletionMessageParamUnion,
+	message openai.ChatCompletionMessageParamUnion,
 	name string,
-) {
+) openai.ChatCompletionMessageParamUnion {
 
 	if param.IsOmitted(message.OfUser) {
-		return
+		return message
 	}
 
 	if param.IsOmitted(message.OfUser.Name) {
-		return
+		return message
 	}
 
 	if message.OfUser.Name.Value != name {
-		return
+		return message
 	}
 
 	userContent := message.OfUser.Content
@@ -433,13 +433,13 @@ func turnIntoAssistantMessage(
 	if len(assistantContentParts) > 0 {
 		assistantContent.OfArrayOfContentParts = assistantContentParts
 	}
-	message.OfAssistant = &openai.ChatCompletionAssistantMessageParam{
-		Content: assistantContent,
-		Name:    message.OfUser.Name,
+	
+	return openai.ChatCompletionMessageParamUnion{
+		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+			Content: assistantContent,
+			Name:    message.OfUser.Name,
+		},
 	}
-	message.OfUser = nil
-
-	return
 }
 
 func (agent *agenticReActLoop) persistMention(
@@ -498,11 +498,11 @@ func setName(
 }
 
 func turnIntoUserMessage(
-	message *openai.ChatCompletionMessageParamUnion,
-) {
+	message openai.ChatCompletionMessageParamUnion,
+) openai.ChatCompletionMessageParamUnion {
 
 	if param.IsOmitted(message.OfAssistant) {
-		return
+		return message
 	}
 
 	assistantContent := message.OfAssistant.Content
@@ -523,9 +523,11 @@ func turnIntoUserMessage(
 	if len(contentParts) > 0 {
 		userContent.OfArrayOfContentParts = contentParts
 	}
-	message.OfUser = &openai.ChatCompletionUserMessageParam{
-		Content: userContent,
-		Name:    message.OfAssistant.Name,
+	
+	return openai.ChatCompletionMessageParamUnion{
+		OfUser: &openai.ChatCompletionUserMessageParam{
+			Content: userContent,
+			Name:    message.OfAssistant.Name,
+		},
 	}
-	message.OfAssistant = nil
 }
