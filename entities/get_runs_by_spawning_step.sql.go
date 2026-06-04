@@ -11,14 +11,14 @@ import (
 )
 
 const getRunsBySpawningStepId = `-- name: GetRunsBySpawningStepId :many
-SELECT id, mention_id, status, created_at, parent_run_id, child_run_id, spawning_step_id, linked_at FROM runs r
+SELECT id, kind, status, created_at, parent_run_id, child_run_id, spawning_step_id, linked_at FROM runs r
 INNER JOIN run_links rl ON r.id = rl.child_run_id
 WHERE rl.spawning_step_id = ?
 `
 
 type GetRunsBySpawningStepIdRow struct {
 	ID             string    `json:"id"`
-	MentionID      string    `json:"mention_id"`
+	Kind           string    `json:"kind"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
 	ParentRunID    string    `json:"parent_run_id"`
@@ -38,7 +38,7 @@ func (q *Queries) GetRunsBySpawningStepId(ctx context.Context, spawningStepID st
 		var i GetRunsBySpawningStepIdRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.MentionID,
+			&i.Kind,
 			&i.Status,
 			&i.CreatedAt,
 			&i.ParentRunID,

@@ -11,15 +11,15 @@ import (
 func createRun(
 	ctx context.Context,
 	qtx *entities.Queries,
-	mentionId string,
+	kind string,
 	logger *zap.Logger,
 ) (
 	runRecord entities.Run,
 	err error,
 ) {
 	createRunParams := entities.CreateRunParams{
-		ID:        ulid.Make().String(),
-		MentionID: mentionId,
+		ID:   ulid.Make().String(),
+		Kind: kind,
 	}
 	runRecord, err = qtx.CreateRun(ctx, createRunParams)
 	if err != nil {

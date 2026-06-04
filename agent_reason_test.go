@@ -372,7 +372,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.Equal(t, actualRunRecord.Status, "completed")
 	assert.WithinRange(t, actualRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualMentionRecord, err := teamDb.Queries.GetMention(ctx, actualRunRecord.MentionID)
+	actualMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMentionRecord.MessageID, userMessageId)
 	assert.Equal(t, actualMentionRecord.FromMemberRoleID, "jim-at-lobby")
@@ -572,7 +572,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.Equal(t, actualFirstRunRecord.Status, "completed")
 	assert.WithinRange(t, actualFirstRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualFirstMentionRecord, err := teamDb.Queries.GetMention(ctx, actualFirstRunRecord.MentionID)
+	actualFirstMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualFirstRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualFirstMentionRecord.MessageID, firstUserMessageId)
 	assert.Equal(t, actualFirstMentionRecord.FromMemberRoleID, "jim-at-lobby")
@@ -608,7 +608,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.Equal(t, actualSecondRunRecord.Status, "completed")
 	assert.WithinRange(t, actualSecondRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualSecondMentionRecord, err := teamDb.Queries.GetMention(ctx, actualSecondRunRecord.MentionID)
+	actualSecondMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualSecondRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualSecondMentionRecord.MessageID, secondUserMessageId)
 	assert.Equal(t, actualSecondMentionRecord.FromMemberRoleID, "jim-at-lobby")

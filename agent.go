@@ -65,7 +65,7 @@ func (runtime *AgentRuntime) createAgent(
 		return
 	}
 
-	mentionRecord, err := qtx.GetMention(ctx, runRecord.MentionID)
+	mentionRecord, err := qtx.GetMentionByRun(ctx, runRecord.ID)
 	if err != nil {
 		logger.Error("failed to get mention", zap.Error(err))
 		return
@@ -178,8 +178,20 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 			return
 		}
 
+		createRunParams := entities.CreateRunParams{
+			ID:   ulid.Make().String(),
+			Kind: "mention",
+		}
+		nextRunRecord, er := qtx.CreateRun(ctx, createRunParams)
+		err = er
+		if err != nil {
+			logger.Error("failed to create run", zap.Error(err))
+			return
+		}
+
 		createMentionParams := entities.CreateMentionParams{
 			ID:               ulid.Make().String(),
+			RunID:            nextRunRecord.ID,
 			MessageID:        messageRecord.ID,
 			FromMemberRoleID: agent.role.ID,
 			ToMemberName:     toMemberRecord.Name,
@@ -190,13 +202,6 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 		err = er
 		if err != nil {
 			logger.Error("failed to create mention", zap.Error(err))
-			return
-		}
-
-		nextRunRecord, er := createRun(ctx, qtx, mentionRecord.ID, logger)
-		err = er
-		if err != nil {
-			logger.Error("failed to create run", zap.Error(err))
 			return
 		}
 

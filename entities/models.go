@@ -12,10 +12,10 @@ import (
 
 type Action struct {
 	ID         string          `json:"id"`
+	RunID      string          `json:"run_id"`
 	StepID     string          `json:"step_id"`
 	ToolCallID string          `json:"tool_call_id"`
-	Name       string          `json:"name"`
-	Arguments  json.RawMessage `json:"arguments"`
+	ToolCall   json.RawMessage `json:"tool_call"`
 }
 
 type Channel struct {
@@ -54,6 +54,7 @@ type Member struct {
 
 type Mention struct {
 	ID               string `json:"id"`
+	RunID            string `json:"run_id"`
 	MessageID        string `json:"message_id"`
 	FromMemberRoleID string `json:"from_member_role_id"`
 	ToMemberName     string `json:"to_member_name"`
@@ -79,7 +80,7 @@ type Role struct {
 
 type Run struct {
 	ID        string    `json:"id"`
-	MentionID string    `json:"mention_id"`
+	Kind      string    `json:"kind"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }

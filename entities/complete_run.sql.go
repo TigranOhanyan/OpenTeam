@@ -10,7 +10,7 @@ import (
 )
 
 const completeRun = `-- name: CompleteRun :one
-UPDATE runs SET status = 'completed' WHERE id = ? RETURNING id, mention_id, status, created_at
+UPDATE runs SET status = 'completed' WHERE id = ? RETURNING id, kind, status, created_at
 `
 
 func (q *Queries) CompleteRun(ctx context.Context, id string) (Run, error) {
@@ -18,7 +18,7 @@ func (q *Queries) CompleteRun(ctx context.Context, id string) (Run, error) {
 	var i Run
 	err := row.Scan(
 		&i.ID,
-		&i.MentionID,
+		&i.Kind,
 		&i.Status,
 		&i.CreatedAt,
 	)

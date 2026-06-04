@@ -10,12 +10,13 @@ import (
 )
 
 const createMention = `-- name: CreateMention :one
-INSERT INTO mentions (id, message_id, from_member_role_id, to_member_name, message) 
-VALUES (?, ?, ?, ?, ?) RETURNING id, message_id, from_member_role_id, to_member_name, message
+INSERT INTO mentions (id, run_id, message_id, from_member_role_id, to_member_name, message) 
+VALUES (?, ?, ?, ?, ?, ?) RETURNING id, run_id, message_id, from_member_role_id, to_member_name, message
 `
 
 type CreateMentionParams struct {
 	ID               string `json:"id"`
+	RunID            string `json:"run_id"`
 	MessageID        string `json:"message_id"`
 	FromMemberRoleID string `json:"from_member_role_id"`
 	ToMemberName     string `json:"to_member_name"`
@@ -25,6 +26,7 @@ type CreateMentionParams struct {
 func (q *Queries) CreateMention(ctx context.Context, arg CreateMentionParams) (Mention, error) {
 	row := q.db.QueryRowContext(ctx, createMention,
 		arg.ID,
+		arg.RunID,
 		arg.MessageID,
 		arg.FromMemberRoleID,
 		arg.ToMemberName,
@@ -33,6 +35,7 @@ func (q *Queries) CreateMention(ctx context.Context, arg CreateMentionParams) (M
 	var i Mention
 	err := row.Scan(
 		&i.ID,
+		&i.RunID,
 		&i.MessageID,
 		&i.FromMemberRoleID,
 		&i.ToMemberName,
