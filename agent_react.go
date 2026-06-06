@@ -204,6 +204,16 @@ func (agent *agenticReActLoop) reActUnsafe(
 		}
 	}
 
+	for _, actionPlan := range orchestrationPlan.actionPlans {
+
+		_, err = agent.persistAction(ctx, qtx, actionPlan, logger)
+		if err != nil {
+			logger.Error("failed to persist action", zap.Error(err))
+			return
+		}
+
+	}
+
 	if orchestrationPlan.hasMessage {
 		logger.Info("persisting message...")
 
@@ -229,16 +239,6 @@ func (agent *agenticReActLoop) reActUnsafe(
 		_, err = qtx.CreateMessage(ctx, createMessageParams)
 		if err != nil {
 			logger.Error("failed to create new message", zap.Error(err))
-			return
-		}
-
-	}
-
-	for _, actionPlan := range orchestrationPlan.actionPlans {
-
-		_, err = agent.persistAction(ctx, qtx, actionPlan, logger)
-		if err != nil {
-			logger.Error("failed to persist action", zap.Error(err))
 			return
 		}
 
@@ -550,11 +550,7 @@ func (agent *agenticReActLoop) persistAction(
 	actionRecord entities.Action,
 	err error,
 ) {
-	createRunParams := entities.CreateRunParams{
-		ID:   ulid.Make().String(),
-		Kind: "mention",
-	}
-	nextRunRecord, er := qtx.CreateRun(ctx, createRunParams)
+	nextRunRecord, er := createRun(ctx, qtx, "action", logger)
 	err = er
 	if err != nil {
 		logger.Error("failed to create run", zap.Error(err))

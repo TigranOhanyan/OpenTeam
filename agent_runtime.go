@@ -50,11 +50,7 @@ func (runtime *AgentRuntime) persistMentionsAndMessage(
 			return
 		}
 
-		createRunParams := entities.CreateRunParams{
-			ID:   ulid.Make().String(),
-			Kind: "mention",
-		}
-		nextRunRecord, er := qtx.CreateRun(ctx, createRunParams)
+		nextRunRecord, er := createRun(ctx, qtx, "mention", logger)
 		err = er
 		if err != nil {
 			logger.Error("failed to create run", zap.Error(err))

@@ -14,6 +14,7 @@ const getIncompleteRunsAndChildren = `-- name: GetIncompleteRunsAndChildren :man
 SELECT 
     r.id AS run_id,
     r.status AS run_status,
+    r.kind AS run_kind,
     rl.child_run_id AS child_run_id,
     child.status AS child_status
 FROM runs r
@@ -25,6 +26,7 @@ WHERE r.status != 'completed'
 type GetIncompleteRunsAndChildrenRow struct {
 	RunID       string         `json:"run_id"`
 	RunStatus   string         `json:"run_status"`
+	RunKind     string         `json:"run_kind"`
 	ChildRunID  sql.NullString `json:"child_run_id"`
 	ChildStatus sql.NullString `json:"child_status"`
 }
@@ -41,6 +43,7 @@ func (q *Queries) GetIncompleteRunsAndChildren(ctx context.Context) ([]GetIncomp
 		if err := rows.Scan(
 			&i.RunID,
 			&i.RunStatus,
+			&i.RunKind,
 			&i.ChildRunID,
 			&i.ChildStatus,
 		); err != nil {

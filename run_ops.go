@@ -17,6 +17,7 @@ func createRun(
 	runRecord entities.Run,
 	err error,
 ) {
+
 	createRunParams := entities.CreateRunParams{
 		ID:   ulid.Make().String(),
 		Kind: kind,

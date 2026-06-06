@@ -2,6 +2,7 @@
 SELECT 
     r.id AS run_id,
     r.status AS run_status,
+    r.kind AS run_kind,
     rl.child_run_id AS child_run_id,
     child.status AS child_status
 FROM runs r
