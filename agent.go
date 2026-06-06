@@ -12,13 +12,13 @@ import (
 var MultiplePendingStepsError = errors.New("multiple pending steps found")
 
 type agenticReActLoop struct {
-	runtime    *AgentRuntime
-	runRecord  entities.Run
-	stepRecord entities.Step
-	channel    entities.Channel
-	member     entities.Member
-	role       entities.Role
-	task       entities.Task
+	runtime       *AgentRuntime
+	runRecord     entities.Run
+	stepRecord    entities.Step
+	channelRecord entities.Channel
+	memberRecord  entities.Member
+	roleRecord    entities.Role
+	taskRecord    entities.Task
 }
 
 func (runtime *AgentRuntime) createAgent(
@@ -128,13 +128,13 @@ func (runtime *AgentRuntime) createAgent(
 	}
 
 	agent = &agenticReActLoop{
-		runtime:    runtime,
-		runRecord:  runRecord,
-		stepRecord: pendingStepRecord,
-		channel:    channelRecord,
-		member:     memberRecord,
-		role:       roleRecord,
-		task:       taskRecord,
+		runtime:       runtime,
+		runRecord:     runRecord,
+		stepRecord:    pendingStepRecord,
+		channelRecord: channelRecord,
+		memberRecord:  memberRecord,
+		roleRecord:    roleRecord,
+		taskRecord:    taskRecord,
 	}
 
 	return
@@ -158,7 +158,7 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 	}
 
 	createMessageParams.StepID = agent.stepRecord.ID
-	createMessageParams.TaskID = agent.task.ID
+	createMessageParams.TaskID = agent.taskRecord.ID
 
 	messageRecord, err = qtx.CreateMessage(ctx, createMessageParams)
 	if err != nil {
@@ -193,7 +193,7 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 			ID:               ulid.Make().String(),
 			RunID:            nextRunRecord.ID,
 			MessageID:        messageRecord.ID,
-			FromMemberRoleID: agent.role.ID,
+			FromMemberRoleID: agent.roleRecord.ID,
 			ToMemberName:     toMemberRecord.Name,
 			Message:          mentions.message,
 		}
@@ -213,12 +213,14 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 
 		if agent.runtime.ChangeStream != nil {
 
-			agent.runtime.ChangeStream <- ChangeEvent{
+			event := ChangeEvent{
 				Kind:        CdcEventKindMention,
 				ChannelName: mentions.channelName,
 				MemberName:  toMemberRecord.Name,
 				Mention:     &mentionRecord,
 			}
+
+			agent.runtime.ChangeStream <- event
 		}
 	}
 

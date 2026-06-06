@@ -11,15 +11,14 @@ import (
 )
 
 const createAction = `-- name: CreateAction :one
-INSERT INTO actions (id, run_id, step_id, tool_call_id, tool_call) VALUES (?, ?, ?, ?, ?) RETURNING id, run_id, step_id, tool_call_id, tool_call
+INSERT INTO actions (id, run_id, step_id, tool_call) VALUES (?, ?, ?, ?) RETURNING id, run_id, step_id, tool_call, tool_requirement_message_id, tool_result_message_id
 `
 
 type CreateActionParams struct {
-	ID         string          `json:"id"`
-	RunID      string          `json:"run_id"`
-	StepID     string          `json:"step_id"`
-	ToolCallID string          `json:"tool_call_id"`
-	ToolCall   json.RawMessage `json:"tool_call"`
+	ID       string          `json:"id"`
+	RunID    string          `json:"run_id"`
+	StepID   string          `json:"step_id"`
+	ToolCall json.RawMessage `json:"tool_call"`
 }
 
 func (q *Queries) CreateAction(ctx context.Context, arg CreateActionParams) (Action, error) {
@@ -27,7 +26,6 @@ func (q *Queries) CreateAction(ctx context.Context, arg CreateActionParams) (Act
 		arg.ID,
 		arg.RunID,
 		arg.StepID,
-		arg.ToolCallID,
 		arg.ToolCall,
 	)
 	var i Action
@@ -35,8 +33,9 @@ func (q *Queries) CreateAction(ctx context.Context, arg CreateActionParams) (Act
 		&i.ID,
 		&i.RunID,
 		&i.StepID,
-		&i.ToolCallID,
 		&i.ToolCall,
+		&i.ToolRequirementMessageID,
+		&i.ToolResultMessageID,
 	)
 	return i, err
 }

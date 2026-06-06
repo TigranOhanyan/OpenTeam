@@ -81,12 +81,14 @@ func (runtime *AgentRuntime) persistMentionsAndMessage(
 
 		if runtime.ChangeStream != nil {
 
-			runtime.ChangeStream <- ChangeEvent{
+			event := ChangeEvent{
 				Kind:        CdcEventKindMention,
 				ChannelName: mentions.channelName,
 				MemberName:  toMemberRecord.Name,
 				Mention:     &mentionRecord,
 			}
+
+			runtime.ChangeStream <- event
 		}
 	}
 

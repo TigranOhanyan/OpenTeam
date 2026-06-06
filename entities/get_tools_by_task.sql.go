@@ -10,7 +10,7 @@ import (
 )
 
 const getToolsByTask = `-- name: GetToolsByTask :many
-SELECT id, task_id, name, description, parameters FROM tools WHERE task_id = ?
+SELECT id, task_id, tool FROM tools WHERE task_id = ?
 `
 
 func (q *Queries) GetToolsByTask(ctx context.Context, taskID string) ([]Tool, error) {
@@ -22,13 +22,7 @@ func (q *Queries) GetToolsByTask(ctx context.Context, taskID string) ([]Tool, er
 	var items []Tool
 	for rows.Next() {
 		var i Tool
-		if err := rows.Scan(
-			&i.ID,
-			&i.TaskID,
-			&i.Name,
-			&i.Description,
-			&i.Parameters,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.TaskID, &i.Tool); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

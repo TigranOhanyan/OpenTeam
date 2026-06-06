@@ -11,11 +11,12 @@ import (
 )
 
 type Action struct {
-	ID         string          `json:"id"`
-	RunID      string          `json:"run_id"`
-	StepID     string          `json:"step_id"`
-	ToolCallID string          `json:"tool_call_id"`
-	ToolCall   json.RawMessage `json:"tool_call"`
+	ID                       string          `json:"id"`
+	RunID                    string          `json:"run_id"`
+	StepID                   string          `json:"step_id"`
+	ToolCall                 json.RawMessage `json:"tool_call"`
+	ToolRequirementMessageID interface{}     `json:"tool_requirement_message_id"`
+	ToolResultMessageID      interface{}     `json:"tool_result_message_id"`
 }
 
 type Channel struct {
@@ -110,9 +111,7 @@ type Task struct {
 }
 
 type Tool struct {
-	ID          string          `json:"id"`
-	TaskID      string          `json:"task_id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
+	ID     string          `json:"id"`
+	TaskID string          `json:"task_id"`
+	Tool   json.RawMessage `json:"tool"`
 }

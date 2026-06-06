@@ -24,10 +24,6 @@ type actionPlan struct {
 	toolCall openai.ChatCompletionMessageToolCallUnionParam
 }
 
-// func (o *plan) hasActions() bool {
-// 	return len(o.actingStepIds) != 0
-// }
-
 func (o *plan) isFinalReply() bool {
 	return len(o.mentionsPlans) == 0 && len(o.actionPlans) == 0
 }
