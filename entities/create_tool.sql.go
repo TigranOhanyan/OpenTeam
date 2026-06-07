@@ -11,32 +11,18 @@ import (
 )
 
 const createTool = `-- name: CreateTool :one
-INSERT INTO tools (id, task_id, name, description, parameters) VALUES (?, ?, ?, ?, ?) RETURNING id, task_id, name, description, parameters
+INSERT INTO tools (id, task_id, tool) VALUES (?, ?, ?) RETURNING id, task_id, tool
 `
 
 type CreateToolParams struct {
-	ID          string          `json:"id"`
-	TaskID      string          `json:"task_id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
+	ID     string          `json:"id"`
+	TaskID string          `json:"task_id"`
+	Tool   json.RawMessage `json:"tool"`
 }
 
 func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, error) {
-	row := q.db.QueryRowContext(ctx, createTool,
-		arg.ID,
-		arg.TaskID,
-		arg.Name,
-		arg.Description,
-		arg.Parameters,
-	)
+	row := q.db.QueryRowContext(ctx, createTool, arg.ID, arg.TaskID, arg.Tool)
 	var i Tool
-	err := row.Scan(
-		&i.ID,
-		&i.TaskID,
-		&i.Name,
-		&i.Description,
-		&i.Parameters,
-	)
+	err := row.Scan(&i.ID, &i.TaskID, &i.Tool)
 	return i, err
 }

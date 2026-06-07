@@ -1,5 +1,6 @@
 package OpenTeam
 
-type ExecutedRuns struct {
-	RunIds []string
+type RunSummary struct {
+	ExecutedRunIds []string
+	SkippedRunIds  []string
 }

@@ -19,6 +19,7 @@ import (
 
 func Test_Agent_should_call_llm_when_reasoning(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -100,9 +101,8 @@ func Test_Agent_should_call_llm_when_reasoning(t *testing.T) {
 
 	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	executedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(executedRuns.RunIds))
 
 	verifyRequestStub, err := wiremockClient.Verify(requestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -112,6 +112,7 @@ func Test_Agent_should_call_llm_when_reasoning(t *testing.T) {
 
 func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -193,9 +194,11 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 
 	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	firstExecutedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstExecutedRuns.RunIds))
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
 
 	secondRequestBodyJson :=
 		`{
@@ -260,9 +263,11 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 
 	_, err = agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	secondExecutedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondExecutedRuns.RunIds))
+	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
 
 	verifyFirstRequestStub, err := wiremockClient.Verify(firstRequestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -276,6 +281,7 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning(t *
 
 func Test_Agent_should_persist_the_conversation_history_for_the_first_message_when_reasoning(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -358,21 +364,20 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	assert.NotEmpty(t, userMessageId)
-	executedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(executedRuns.RunIds))
-	actualRunId := executedRuns.RunIds[0]
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualRunRecord, err := teamDb.Queries.GetRun(ctx, actualRunId)
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
+	actualRunRecord := actualRunRecords[0]
 	assert.Equal(t, actualRunRecord.Status, "completed")
 	assert.WithinRange(t, actualRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualMentionRecord, err := teamDb.Queries.GetMention(ctx, actualRunRecord.MentionID)
+	actualMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMentionRecord.MessageID, userMessageId)
 	assert.Equal(t, actualMentionRecord.FromMemberRoleID, "jim-at-lobby")
@@ -387,7 +392,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	expectedUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedUserMessageRecordJson, string(actualUserMessageRecordJson))
 
-	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualRunId)
+	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allSteps))
 	actualStepRecord := allSteps[0]
@@ -395,8 +400,10 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	assert.WithinRange(t, actualStepRecord.CreatedAt, startOfTest, startOfChecking)
 	assert.Equal(t, actualStepRecord.TaskID, "jane-lobby-first-impression")
 
-	actualAgentMessageRecord, err := teamDb.Queries.GetMessageByStep(ctx, actualStepRecord.ID)
+	actualAgentMessageRecords, err := teamDb.Queries.GetMessageByStep(ctx, actualStepRecord.ID)
 	assert.NoError(t, err)
+	assert.Equal(t, len(actualAgentMessageRecords), 1)
+	actualAgentMessageRecord := actualAgentMessageRecords[0]
 	assert.Equal(t, actualAgentMessageRecord.Visibility, string(VisibilityChannel))
 	actualAgentMessageRecordJson, err := json.Marshal(actualAgentMessageRecord.OpenaiMessage)
 	assert.NoError(t, err)
@@ -407,6 +414,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 
 func Test_Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_reasoning(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -488,10 +496,8 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	firstUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, firstUserMessageId)
-	firstExecutedRuns, err := agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstExecutedRuns.RunIds))
+
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
 
 	secondRequestBodyJson :=
@@ -557,22 +563,22 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 
 	secondUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, secondUserMessageId)
-	secondExecutedRuns, err := agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondExecutedRuns.RunIds))
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualFirstRunId := firstExecutedRuns.RunIds[0]
-	actualFirstRunRecord, err := teamDb.Queries.GetRun(ctx, actualFirstRunId)
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
+
+	actualFirstRunRecord := actualRunRecords[0]
 	assert.NoError(t, err)
 	assert.Equal(t, actualFirstRunRecord.Status, "completed")
 	assert.WithinRange(t, actualFirstRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualFirstMentionRecord, err := teamDb.Queries.GetMention(ctx, actualFirstRunRecord.MentionID)
+	actualFirstMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualFirstRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualFirstMentionRecord.MessageID, firstUserMessageId)
 	assert.Equal(t, actualFirstMentionRecord.FromMemberRoleID, "jim-at-lobby")
@@ -586,7 +592,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedFirstUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedFirstUserMessageRecordJson, string(actualFirstUserMessageRecordJson))
 
-	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunId)
+	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allFirstSteps))
 	actualFirstStepRecord := allFirstSteps[0]
@@ -594,21 +600,22 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	assert.WithinRange(t, actualFirstStepRecord.CreatedAt, startOfTest, startOfChecking)
 	assert.Equal(t, actualFirstStepRecord.TaskID, "jane-lobby-first-impression")
 
-	actualFirstAgentMessageRecord, err := teamDb.Queries.GetMessageByStep(ctx, actualFirstStepRecord.ID)
+	actualFirstAgentMessageRecords, err := teamDb.Queries.GetMessageByStep(ctx, actualFirstStepRecord.ID)
 	assert.NoError(t, err)
+	assert.Equal(t, len(actualFirstAgentMessageRecords), 1)
+	actualFirstAgentMessageRecord := actualFirstAgentMessageRecords[0]
 	assert.Equal(t, actualFirstAgentMessageRecord.Visibility, string(VisibilityChannel))
 	actualFirstAgentMessageRecordJson, err := json.Marshal(actualFirstAgentMessageRecord.OpenaiMessage)
 	assert.NoError(t, err)
 	expectedFirstAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`)
 	assert.JSONEq(t, expectedFirstAgentMessageRecordJson, string(actualFirstAgentMessageRecordJson))
 
-	actualSecondRunId := secondExecutedRuns.RunIds[0]
-	actualSecondRunRecord, err := teamDb.Queries.GetRun(ctx, actualSecondRunId)
+	actualSecondRunRecord := actualRunRecords[1]
 	assert.NoError(t, err)
 	assert.Equal(t, actualSecondRunRecord.Status, "completed")
 	assert.WithinRange(t, actualSecondRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualSecondMentionRecord, err := teamDb.Queries.GetMention(ctx, actualSecondRunRecord.MentionID)
+	actualSecondMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualSecondRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualSecondMentionRecord.MessageID, secondUserMessageId)
 	assert.Equal(t, actualSecondMentionRecord.FromMemberRoleID, "jim-at-lobby")
@@ -622,15 +629,17 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedSecondUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
 	assert.JSONEq(t, expectedSecondUserMessageRecordJson, string(actualSecondUserMessageRecordJson))
 
-	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunId)
+	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allSecondSteps))
 	actualSecondStepRecord := allSecondSteps[0]
 	assert.Equal(t, actualSecondStepRecord.Status, "completed")
 	assert.WithinRange(t, actualSecondStepRecord.CreatedAt, startOfTest, startOfChecking)
 	assert.Equal(t, actualSecondStepRecord.TaskID, "jane-lobby-first-impression")
-	actualSecondAgentMessageRecord, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondStepRecord.ID)
+	actualSecondAgentMessageRecords, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondStepRecord.ID)
 	assert.NoError(t, err)
+	assert.Equal(t, len(actualSecondAgentMessageRecords), 1)
+	actualSecondAgentMessageRecord := actualSecondAgentMessageRecords[0]
 	assert.Equal(t, actualSecondAgentMessageRecord.Visibility, string(VisibilityChannel))
 	actualSecondAgentMessageRecordJson, err := json.Marshal(actualSecondAgentMessageRecord.OpenaiMessage)
 	assert.NoError(t, err)

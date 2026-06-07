@@ -10,7 +10,7 @@ import (
 )
 
 const getMentionsByMessageId = `-- name: GetMentionsByMessageId :one
-SELECT m.id, m.message_id, m.from_member_role_id, m.to_member_name, m.message FROM mentions m WHERE m.message_id = ?
+SELECT m.id, m.run_id, m.message_id, m.from_member_role_id, m.to_member_name, m.message FROM mentions m WHERE m.message_id = ?
 `
 
 func (q *Queries) GetMentionsByMessageId(ctx context.Context, messageID string) (Mention, error) {
@@ -18,6 +18,7 @@ func (q *Queries) GetMentionsByMessageId(ctx context.Context, messageID string) 
 	var i Mention
 	err := row.Scan(
 		&i.ID,
+		&i.RunID,
 		&i.MessageID,
 		&i.FromMemberRoleID,
 		&i.ToMemberName,

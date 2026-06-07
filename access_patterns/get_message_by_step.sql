@@ -1,2 +1,2 @@
--- name: GetMessageByStep :one
-SELECT * FROM messages WHERE step_id = ? LIMIT 1;
+-- name: GetMessageByStep :many
+SELECT * FROM messages WHERE step_id = ? ORDER BY id ASC;

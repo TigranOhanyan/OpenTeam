@@ -11,32 +11,24 @@ import (
 )
 
 const createAction = `-- name: CreateAction :one
-INSERT INTO actions (id, step_id, tool_call_id, name, arguments) VALUES (?, ?, ?, ?, ?) RETURNING id, step_id, tool_call_id, name, arguments
+INSERT INTO actions (id, run_id, tool_call) VALUES (?, ?, ?) RETURNING id, run_id, tool_call, tool_requirement_message_id, tool_result_message_id
 `
 
 type CreateActionParams struct {
-	ID         string          `json:"id"`
-	StepID     string          `json:"step_id"`
-	ToolCallID string          `json:"tool_call_id"`
-	Name       string          `json:"name"`
-	Arguments  json.RawMessage `json:"arguments"`
+	ID       string          `json:"id"`
+	RunID    string          `json:"run_id"`
+	ToolCall json.RawMessage `json:"tool_call"`
 }
 
 func (q *Queries) CreateAction(ctx context.Context, arg CreateActionParams) (Action, error) {
-	row := q.db.QueryRowContext(ctx, createAction,
-		arg.ID,
-		arg.StepID,
-		arg.ToolCallID,
-		arg.Name,
-		arg.Arguments,
-	)
+	row := q.db.QueryRowContext(ctx, createAction, arg.ID, arg.RunID, arg.ToolCall)
 	var i Action
 	err := row.Scan(
 		&i.ID,
-		&i.StepID,
-		&i.ToolCallID,
-		&i.Name,
-		&i.Arguments,
+		&i.RunID,
+		&i.ToolCall,
+		&i.ToolRequirementMessageID,
+		&i.ToolResultMessageID,
 	)
 	return i, err
 }

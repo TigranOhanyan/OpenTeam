@@ -24,12 +24,8 @@ type actionPlan struct {
 	toolCall openai.ChatCompletionMessageToolCallUnionParam
 }
 
-// func (o *plan) hasActions() bool {
-// 	return len(o.actingStepIds) != 0
-// }
-
 func (o *plan) isFinalReply() bool {
-	return len(o.mentionsPlans) == 0 && len(o.actionPlans) == 0
+	return len(o.mentionsPlans) == 0 && len(o.actionPlans) == 0 && o.hasMessage
 }
 
 func (plan *plan) parse(
@@ -84,8 +80,10 @@ func (plan *plan) parse(
 
 			plan.mentionsPlans = append(plan.mentionsPlans, mentionPlan)
 		} else {
-			err = UnexpectedMessageStructureError
-			return
+			actionPlan := actionPlan{
+				toolCall: toolCall,
+			}
+			plan.actionPlans = append(plan.actionPlans, actionPlan)
 		}
 	}
 

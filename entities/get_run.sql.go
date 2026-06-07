@@ -10,7 +10,7 @@ import (
 )
 
 const getRun = `-- name: GetRun :one
-SELECT id, mention_id, status, created_at FROM runs WHERE id = ? LIMIT 1
+SELECT id, kind, status, created_at FROM runs WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
@@ -18,7 +18,7 @@ func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
 	var i Run
 	err := row.Scan(
 		&i.ID,
-		&i.MentionID,
+		&i.Kind,
 		&i.Status,
 		&i.CreatedAt,
 	)

@@ -2,7 +2,6 @@ package OpenTeam
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
@@ -50,8 +49,16 @@ func (runtime *AgentRuntime) persistMentionsAndMessage(
 			return
 		}
 
+		nextRunRecord, er := createRun(ctx, qtx, "mention", logger)
+		err = er
+		if err != nil {
+			logger.Error("failed to create run", zap.Error(err))
+			return
+		}
+
 		createMentionParams := entities.CreateMentionParams{
 			ID:               ulid.Make().String(),
+			RunID:            nextRunRecord.ID,
 			MessageID:        messageRecord.ID,
 			FromMemberRoleID: mentions.fromRoleID,
 			ToMemberName:     toMemberRecord.Name,
@@ -65,23 +72,16 @@ func (runtime *AgentRuntime) persistMentionsAndMessage(
 			return
 		}
 
-		nextRunRecord, er := createRun(ctx, qtx, mentionRecord.ID, logger)
-		err = er
-		if err != nil {
-			logger.Error("failed to create run", zap.Error(err))
-			return
-		}
-
-		fmt.Println("nextRunRecord", nextRunRecord) // todo
-
 		if runtime.ChangeStream != nil {
 
-			runtime.ChangeStream <- ChangeEvent{
+			event := ChangeEvent{
 				Kind:        CdcEventKindMention,
 				ChannelName: mentions.channelName,
 				MemberName:  toMemberRecord.Name,
 				Mention:     &mentionRecord,
 			}
+
+			runtime.ChangeStream <- event
 		}
 	}
 

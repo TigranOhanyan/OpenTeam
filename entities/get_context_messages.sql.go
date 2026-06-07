@@ -15,7 +15,7 @@ WHERE
     (visibility = 'task' AND task_id = ?) OR
     (visibility = 'role' AND role_id = ?) OR
     (visibility = 'channel' AND channel_name = ?)
-ORDER BY created_at ASC
+ORDER BY id ASC
 `
 
 type GetContextMessagesParams struct {

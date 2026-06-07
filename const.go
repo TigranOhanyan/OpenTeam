@@ -3,7 +3,7 @@ package OpenTeam
 const (
 	AmountOfChoices   int64   = 1
 	Temperature       float64 = 1.0
-	ParallelToolCalls         = false
+	ParallelToolCalls         = true
 )
 
 type Visibility string

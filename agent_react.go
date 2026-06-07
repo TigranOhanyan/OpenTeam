@@ -22,15 +22,80 @@ func (agent *agenticReActLoop) reAct(
 ) (
 	err error,
 ) {
+
+	err = agent.reActUnsafe(ctx, logger)
+	if err == nil {
+		return
+	}
+
+	trx, err := agent.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+
+	defer func() {
+		if err != nil {
+			trx.Rollback()
+		}
+	}()
+
+	qtx := agent.runtime.ConversationHistoryDb.Queries.WithTx(trx)
+
+	outOfOfficeMessage := agent.outOfOffice()
+	outOfOfficeMessageBytes, er := json.Marshal(outOfOfficeMessage)
+	err = er
+	if err != nil {
+		logger.Error("failed to marshal out of office message", zap.Error(err))
+		return
+	}
+
+	createMessageParams := entities.CreateMessageParams{
+		ID:            ulid.Make().String(),
+		Visibility:    string(VisibilityChannel),
+		StepID:        agent.stepRecord.ID,
+		ChannelName:   agent.channelRecord.Name,
+		RoleID:        agent.roleRecord.ID,
+		TaskID:        agent.taskRecord.ID,
+		OpenaiMessage: json.RawMessage(outOfOfficeMessageBytes),
+	}
+
+	_, err = qtx.CreateMessage(ctx, createMessageParams)
+	if err != nil {
+		logger.Error("failed to create new message", zap.Error(err))
+		return
+	}
+
+	_, err = qtx.CompleteRun(ctx, agent.runRecord.ID)
+	if err != nil {
+		logger.Error("failed to update run", zap.Error(err))
+		return
+	}
+
+	err = trx.Commit()
+	if err != nil {
+		logger.Error("failed to commit transaction", zap.Error(err))
+		return
+	}
+
+	return
+}
+
+func (agent *agenticReActLoop) reActUnsafe(
+	ctx context.Context,
+	logger *zap.Logger,
+) (
+	err error,
+) {
 	logger = logger.With(zap.String("stepId", agent.stepRecord.ID))
 
-	logger = logger.With(zap.String("channelId", agent.channel.Name))
+	logger = logger.With(zap.String("channelId", agent.channelRecord.Name))
 	logger.Info("getting messages...")
 
 	getContextMessagesParams := entities.GetContextMessagesParams{
-		TaskID:      agent.task.ID,
-		RoleID:      agent.role.ID,
-		ChannelName: agent.channel.Name,
+		TaskID:      agent.taskRecord.ID,
+		RoleID:      agent.roleRecord.ID,
+		ChannelName: agent.channelRecord.Name,
 	}
 	messageRecords, err := agent.runtime.ConversationHistoryDb.Queries.GetContextMessages(ctx, getContextMessagesParams)
 	if err != nil {
@@ -50,16 +115,38 @@ func (agent *agenticReActLoop) reAct(
 			logger.Error("failed to unmarshal openai message", zap.Error(err))
 			return
 		}
-		openAiMessage = turnIntoAssistantMessage(openAiMessage, agent.member.Name)
+		openAiMessage = turnIntoAssistantMessage(openAiMessage, agent.memberRecord.Name)
 		openAiMessages[i] = openAiMessage
 	}
 
+	toolRecords, err := agent.runtime.ConversationHistoryDb.Queries.GetToolsByTask(ctx, agent.taskRecord.ID)
+	if err != nil {
+		logger.Error("failed to get tools", zap.Error(err))
+		return
+	}
+
+	openAiTools := make([]openai.ChatCompletionToolUnionParam, len(toolRecords))
+	for i, toolRecord := range toolRecords {
+		openAiToolJson := toolRecord.Tool
+		var openAiTool openai.ChatCompletionToolUnionParam
+		err = json.Unmarshal(openAiToolJson, &openAiTool)
+		if err != nil {
+			logger.Error("failed to unmarshal openai tool", zap.Error(err))
+			return
+		}
+		openAiTools[i] = openAiTool
+	}
+
 	chatParams := openai.ChatCompletionNewParams{
-		Model:       agent.task.Model,
+		Model:       agent.taskRecord.Model,
 		Messages:    openAiMessages,
 		N:           param.NewOpt(AmountOfChoices),
 		Temperature: param.NewOpt(Temperature),
-		// ParallelToolCalls: param.NewOpt(ParallelToolCalls),
+	}
+
+	if len(openAiTools) > 0 {
+		chatParams.Tools = openAiTools
+		chatParams.ParallelToolCalls = param.NewOpt(ParallelToolCalls)
 	}
 
 	trx, err := agent.runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
@@ -79,7 +166,7 @@ func (agent *agenticReActLoop) reAct(
 	var llmResponseAsMessage openai.ChatCompletionMessageParamUnion
 	var messageId string
 
-	if agent.task.StreamMode {
+	if agent.taskRecord.StreamMode {
 		llmResponseAsMessage, messageId, err = agent.reasonInStreamMode(ctx, qtx, agent.stepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in stream mode", zap.Error(err))
@@ -93,7 +180,7 @@ func (agent *agenticReActLoop) reAct(
 		}
 	}
 
-	setName(&llmResponseAsMessage, agent.member.Name)
+	setName(&llmResponseAsMessage, agent.memberRecord.Name)
 
 	logger = logger.With(zap.String("messageId", messageId))
 
@@ -117,14 +204,22 @@ func (agent *agenticReActLoop) reAct(
 		}
 	}
 
+	for _, actionPlan := range orchestrationPlan.actionPlans {
+
+		_, err = agent.persistAction(ctx, qtx, actionPlan, logger)
+		if err != nil {
+			logger.Error("failed to persist action", zap.Error(err))
+			return
+		}
+
+	}
+
 	if orchestrationPlan.hasMessage {
 		logger.Info("persisting message...")
 
 		userLlmResponseAsMessage := turnIntoUserMessage(llmResponseAsMessage)
 
-		filteredLlmResponseAsMessage := filterControlToolCalls(userLlmResponseAsMessage)
-
-		filteredLlmResponseAsMessageBytes, er := json.Marshal(filteredLlmResponseAsMessage)
+		userLlmResponseAsMessageBytes, er := json.Marshal(userLlmResponseAsMessage)
 		err = er
 		if err != nil {
 			logger.Error("failed to marshal llm response as message", zap.Error(err))
@@ -135,40 +230,10 @@ func (agent *agenticReActLoop) reAct(
 			ID:            messageId,
 			Visibility:    string(VisibilityChannel),
 			StepID:        agent.stepRecord.ID,
-			ChannelName:   agent.channel.Name,
-			RoleID:        agent.role.ID,
-			TaskID:        agent.task.ID,
-			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
-		}
-
-		_, err = qtx.CreateMessage(ctx, createMessageParams)
-		if err != nil {
-			logger.Error("failed to create new message", zap.Error(err))
-			return
-		}
-
-	}
-
-	if len(orchestrationPlan.actionPlans) > 0 {
-		logger.Info("persisting message...")
-
-		filteredLlmResponseAsMessage := orchestrationPlan.filterControlToolCalls(llmResponseAsMessage)
-		filteredLlmResponseAsMessageBytes, er := json.Marshal(filteredLlmResponseAsMessage)
-		err = er
-		if err != nil {
-			logger.Error("failed to marshal llm response as message", zap.Error(err))
-			return
-		}
-
-		toolMessageId := ulid.Make().String()
-		createMessageParams := entities.CreateMessageParams{
-			ID:            toolMessageId,
-			Visibility:    string(VisibilityTask),
-			StepID:        agent.stepRecord.ID,
-			ChannelName:   agent.channel.Name,
-			RoleID:        agent.role.ID,
-			TaskID:        agent.task.ID,
-			OpenaiMessage: json.RawMessage(filteredLlmResponseAsMessageBytes),
+			ChannelName:   agent.channelRecord.Name,
+			RoleID:        agent.roleRecord.ID,
+			TaskID:        agent.taskRecord.ID,
+			OpenaiMessage: json.RawMessage(userLlmResponseAsMessageBytes),
 		}
 
 		_, err = qtx.CreateMessage(ctx, createMessageParams)
@@ -191,16 +256,14 @@ func (agent *agenticReActLoop) reAct(
 		createStepParams := entities.CreateStepParams{
 			ID:     ulid.Make().String(),
 			RunID:  agent.runRecord.ID,
-			TaskID: agent.task.ID,
+			TaskID: agent.taskRecord.ID,
 		}
 		_, err = qtx.CreateStep(ctx, createStepParams)
 		if err != nil {
 			logger.Error("failed to create new step", zap.Error(err))
 			return
 		}
-	}
-
-	if orchestrationPlan.isFinalReply() {
+	} else {
 		logger.Info("marking run as complete...")
 		_, err = qtx.CompleteRun(ctx, agent.runRecord.ID)
 		if err != nil {
@@ -262,11 +325,12 @@ func (agent *agenticReActLoop) reasonInStreamMode(
 			ID:                  responseId,
 			SequenceNumber:      int64(sequenceNumber),
 			StepID:              stepRecord.ID,
-			TaskID:              agent.task.ID,
+			TaskID:              agent.taskRecord.ID,
 			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 		}
 
-		_, err = qtx.CreateLlmChunkResponses(ctx, createChunkParams)
+		chunkRecord, er := qtx.CreateLlmChunkResponses(ctx, createChunkParams)
+		err = er
 		if err != nil {
 			logger.Error("failed to create chunk", zap.Error(err))
 			return
@@ -274,18 +338,14 @@ func (agent *agenticReActLoop) reasonInStreamMode(
 
 		if agent.runtime.ChangeStream != nil {
 
-			agent.runtime.ChangeStream <- ChangeEvent{
+			event := ChangeEvent{
 				Kind:        CdcEventKindMessageChunk,
-				MemberName:  agent.member.Name,
-				ChannelName: agent.channel.Name,
-				Chunk: &entities.LlmChunkResponse{
-					ID:                  createChunkParams.ID,
-					SequenceNumber:      createChunkParams.SequenceNumber,
-					StepID:              createChunkParams.StepID,
-					TaskID:              createChunkParams.TaskID,
-					OpenaiChunkResponse: createChunkParams.OpenaiChunkResponse,
-				},
+				MemberName:  agent.memberRecord.Name,
+				ChannelName: agent.channelRecord.Name,
+				Chunk:       &chunkRecord,
 			}
+
+			agent.runtime.ChangeStream <- event
 		}
 
 		sequenceNumber++
@@ -367,7 +427,7 @@ func (agent *agenticReActLoop) reasonInOneShotMode(
 
 	createLlmResponseParams := entities.CreateLlmResponseParams{
 		ID:             responseId,
-		TaskID:         agent.task.ID,
+		TaskID:         agent.taskRecord.ID,
 		StepID:         stepRecord.ID,
 		OpenaiResponse: json.RawMessage(llmResponseBytes),
 	}
@@ -433,7 +493,7 @@ func turnIntoAssistantMessage(
 	if len(assistantContentParts) > 0 {
 		assistantContent.OfArrayOfContentParts = assistantContentParts
 	}
-	
+
 	return openai.ChatCompletionMessageParamUnion{
 		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
 			Content: assistantContent,
@@ -451,7 +511,7 @@ func (agent *agenticReActLoop) persistMention(
 	messageRecord entities.Message,
 	err error,
 ) {
-	allRoleRecords, err := qtx.GetRoleByChannel(ctx, agent.channel.Name)
+	allRoleRecords, err := qtx.GetRoleByChannel(ctx, agent.channelRecord.Name)
 	if err != nil {
 		logger.Error("failed to get user membership", zap.Error(err))
 		return
@@ -463,9 +523,9 @@ func (agent *agenticReActLoop) persistMention(
 	}
 
 	mentions := mentions{
-		channelName:    agent.channel.Name,
-		fromMemberName: agent.member.Name,
-		fromRoleID:     agent.role.ID,
+		channelName:    agent.channelRecord.Name,
+		fromMemberName: agent.memberRecord.Name,
+		fromRoleID:     agent.roleRecord.ID,
 		toMemberNames:  []string{mentionPlan.agentName},
 		allMemberNames: []string{mentionPlan.agentName},
 		message:        mentionPlan.message,
@@ -477,6 +537,63 @@ func (agent *agenticReActLoop) persistMention(
 		return
 	}
 
+	return
+
+}
+
+func (agent *agenticReActLoop) persistAction(
+	ctx context.Context,
+	qtx *entities.Queries,
+	actionPlan actionPlan,
+	logger *zap.Logger,
+) (
+	actionRecord entities.Action,
+	err error,
+) {
+	nextRunRecord, er := createRun(ctx, qtx, "action", logger)
+	err = er
+	if err != nil {
+		logger.Error("failed to create run", zap.Error(err))
+		return
+	}
+
+	toolCallBytes, er := json.Marshal(actionPlan.toolCall)
+	err = er
+	if err != nil {
+		logger.Error("failed to marshal tool call", zap.Error(err))
+		return
+	}
+
+	createActionParams := entities.CreateActionParams{
+		ID:       ulid.Make().String(),
+		RunID:    nextRunRecord.ID,
+		ToolCall: json.RawMessage(toolCallBytes),
+	}
+
+	actionRecord, err = qtx.CreateAction(ctx, createActionParams)
+	err = er
+	if err != nil {
+		logger.Error("failed to create mention", zap.Error(err))
+		return
+	}
+
+	err = linkRuns(ctx, qtx, agent.runRecord.ID, nextRunRecord.ID, agent.stepRecord.ID, logger)
+	if err != nil {
+		logger.Error("failed to link run", zap.Error(err))
+		return
+	}
+
+	if agent.runtime.ChangeStream != nil {
+
+		event := ChangeEvent{
+			Kind:        CdcEventKindAction,
+			ChannelName: agent.channelRecord.Name,
+			MemberName:  agent.memberRecord.Name,
+			Action:      &actionRecord,
+		}
+
+		agent.runtime.ChangeStream <- event
+	}
 	return
 
 }
@@ -523,11 +640,22 @@ func turnIntoUserMessage(
 	if len(contentParts) > 0 {
 		userContent.OfArrayOfContentParts = contentParts
 	}
-	
+
 	return openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{
 			Content: userContent,
 			Name:    message.OfAssistant.Name,
+		},
+	}
+}
+
+func (agent *agenticReActLoop) outOfOffice() openai.ChatCompletionMessageParamUnion {
+	return openai.ChatCompletionMessageParamUnion{
+		OfUser: &openai.ChatCompletionUserMessageParam{
+			Content: openai.ChatCompletionUserMessageParamContentUnion{
+				OfString: param.NewOpt("I'm out of office right now. Please try again later."),
+			},
+			Name: param.NewOpt(agent.memberRecord.Name),
 		},
 	}
 }
