@@ -21,6 +21,7 @@ import (
 
 func Test_Agent_should_call_llm_with_tools_in_stream_mode(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -113,9 +114,8 @@ func Test_Agent_should_call_llm_with_tools_in_stream_mode(t *testing.T) {
 
 	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
-	runSummary, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runSummary.ExecutedRunIds))
 
 	verifyRequestStub, err := wiremockClient.Verify(requestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -125,6 +125,7 @@ func Test_Agent_should_call_llm_with_tools_in_stream_mode(t *testing.T) {
 
 func Test_Agent_should_persist_the_conversation_history_for_the_first_message_with_tools_in_stream_mode(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -218,20 +219,22 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
 
-	runSummary, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runSummary.ExecutedRunIds))
+
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualExecutedRunId := runSummary.ExecutedRunIds[0]
-	actualExecutedRunRecord, err := teamDb.Queries.GetRun(ctx, actualExecutedRunId)
+	actualReActRunRecord := actualRunRecords[0]
 	assert.NoError(t, err)
-	assert.Equal(t, actualExecutedRunRecord.Status, "pending")
-	assert.WithinRange(t, actualExecutedRunRecord.CreatedAt, startOfTest, startOfChecking)
+	assert.Equal(t, actualReActRunRecord.Status, "pending")
+	assert.WithinRange(t, actualReActRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualExecutedRunRecord.ID)
+	actualMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualReActRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMentionRecord.MessageID, userMessageId)
 	assert.Equal(t, actualMentionRecord.FromMemberRoleID, "jim-at-lobby")
@@ -246,7 +249,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 	expectedUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello! What is weather in Yerevan?","role":"user"}`)
 	assert.JSONEq(t, expectedUserMessageRecordJson, string(actualUserMessageRecordJson))
 
-	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualExecutedRunId)
+	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualReActRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(allSteps))
 
@@ -277,10 +280,13 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 	assert.NoError(t, err)
 	assert.Empty(t, actualAgentMessageRecords)
 
-	actualActionRecords, err := teamDb.Queries.GetActionByStep(ctx, actualCurrentStepRecord.ID)
+	actualActionRunRecord := actualRunRecords[1]
 	assert.NoError(t, err)
-	assert.Equal(t, len(actualActionRecords), 1)
-	actualActionRecord := actualActionRecords[0]
+	assert.Equal(t, actualActionRunRecord.Status, "pending")
+	assert.WithinRange(t, actualActionRunRecord.CreatedAt, startOfTest, startOfChecking)
+
+	actualActionRecord, err := teamDb.Queries.GetActionByRun(ctx, actualActionRunRecord.ID)
+	assert.NoError(t, err)
 	actualToolCallJson, err := json.Marshal(actualActionRecord.ToolCall)
 	assert.NoError(t, err)
 	expectedToolCallJson := `{"type":"function", "id":"call_yAzMF0nANbOqdFD4hNkezNTM", "function":{"name":"get_current_weather","arguments":"{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}"}}`
@@ -292,6 +298,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 
 func test_Agent_should_call_llm_for_the_followup_conversation_with_tools_in_stream_mode(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -354,9 +361,11 @@ func test_Agent_should_call_llm_for_the_followup_conversation_with_tools_in_stre
 
 	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	firstExecutedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstExecutedRuns.ExecutedRunIds))
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
 
 	secondRequestBodyJson :=
 		`{
@@ -400,8 +409,10 @@ func test_Agent_should_call_llm_for_the_followup_conversation_with_tools_in_stre
 
 	_, err = agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	secondExecutedRuns, err := agent.Run(ctx, testLogger)
-	assert.Equal(t, 1, len(secondExecutedRuns.ExecutedRunIds))
+	err = agent.Run(ctx, testLogger)
+	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
 
 	verifyFirstRequestStub, err := wiremockClient.Verify(firstRequestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -415,6 +426,7 @@ func test_Agent_should_call_llm_for_the_followup_conversation_with_tools_in_stre
 
 func test_Agent_should_persist_the_conversation_history_for_the_first_message_with_tools_in_stream_mode(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -478,15 +490,16 @@ func test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	runSummary, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runSummary.ExecutedRunIds))
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualRunId := runSummary.ExecutedRunIds[0]
-	actualRunRecord, err := teamDb.Queries.GetRun(ctx, actualRunId)
+	actualRunRecord := actualRunRecords[0]
 	assert.NoError(t, err)
 	assert.Equal(t, actualRunRecord.Status, "completed")
 	assert.WithinRange(t, actualRunRecord.CreatedAt, startOfTest, startOfChecking)
@@ -540,6 +553,7 @@ func test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 
 func test_Agent_should_persist_the_conversation_history_for_the_followup_conversation_with_tools_in_stream_mode(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -603,9 +617,11 @@ func test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	firstUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	firstExecutedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstExecutedRuns.ExecutedRunIds))
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
 
 	secondRequestBodyJson :=
 		`{
@@ -650,15 +666,16 @@ func test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	secondUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
 
-	secondExecutedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondExecutedRuns.ExecutedRunIds))
+	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualFirstRunId := firstExecutedRuns.ExecutedRunIds[0]
-	actualFirstRunRecord, err := teamDb.Queries.GetRun(ctx, actualFirstRunId)
+	actualFirstRunRecord := actualRunRecords[0]
 	assert.NoError(t, err)
 	assert.Equal(t, actualFirstRunRecord.Status, "completed")
 	assert.WithinRange(t, actualFirstRunRecord.CreatedAt, startOfTest, startOfChecking)
@@ -677,7 +694,7 @@ func test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedFirstUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedFirstUserMessageRecordJson, string(actualFirstUserMessageRecordJson))
 
-	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunId)
+	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allFirstSteps))
 	actualFirstStepRecord := allFirstSteps[0]
@@ -708,8 +725,7 @@ func test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedFirstAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`)
 	assert.JSONEq(t, expectedFirstAgentMessageRecordJson, string(actualFirstAgentMessageRecordJson))
 
-	actualSecondRunId := secondExecutedRuns.ExecutedRunIds[0]
-	actualSecondRunRecord, err := teamDb.Queries.GetRun(ctx, actualSecondRunId)
+	actualSecondRunRecord := actualRunRecords[1]
 	assert.NoError(t, err)
 	assert.Equal(t, actualSecondRunRecord.Status, "completed")
 	assert.WithinRange(t, actualSecondRunRecord.CreatedAt, startOfTest, startOfChecking)
@@ -729,7 +745,7 @@ func test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	expectedSecondUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
 	assert.JSONEq(t, expectedSecondUserMessageRecordJson, string(actualSecondUserMessageRecordJson))
 
-	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunId)
+	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allSecondSteps))
 	actualSecondStepRecord := allSecondSteps[0]

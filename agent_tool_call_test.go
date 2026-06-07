@@ -21,6 +21,7 @@ import (
 
 func Test_Agent_should_call_llm_with_tools(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -164,9 +165,8 @@ func Test_Agent_should_call_llm_with_tools(t *testing.T) {
 
 	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
-	runSummary, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runSummary.ExecutedRunIds))
 
 	verifyRequestStub, err := wiremockClient.Verify(requestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -176,6 +176,7 @@ func Test_Agent_should_call_llm_with_tools(t *testing.T) {
 
 func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_tool(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -320,21 +321,26 @@ func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
 
-	assert.NotEmpty(t, userMessageId)
-	runSummary, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runSummary.ExecutedRunIds))
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualExecutedRunId := runSummary.ExecutedRunIds[0]
-	actualExecutedRunRecord, err := teamDb.Queries.GetRun(ctx, actualExecutedRunId)
+	actualFirstReActRunRecord := actualRunRecords[0]
 	assert.NoError(t, err)
-	assert.Equal(t, actualExecutedRunRecord.Status, "pending")
-	assert.WithinRange(t, actualExecutedRunRecord.CreatedAt, startOfTest, startOfChecking)
+	assert.Equal(t, actualFirstReActRunRecord.Status, "pending")
+	assert.WithinRange(t, actualFirstReActRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	actualMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualExecutedRunRecord.ID)
+	actualFirstActionRunRecord := actualRunRecords[1]
+	assert.NoError(t, err)
+	assert.Equal(t, actualFirstActionRunRecord.Status, "pending")
+	assert.WithinRange(t, actualFirstActionRunRecord.CreatedAt, startOfTest, startOfChecking)
+
+	actualMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualFirstReActRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, actualMentionRecord.MessageID, userMessageId)
 	assert.Equal(t, actualMentionRecord.FromMemberRoleID, "jim-at-lobby")
@@ -349,7 +355,7 @@ func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	expectedUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello! What is weather in Yerevan?","role":"user"}`)
 	assert.JSONEq(t, expectedUserMessageRecordJson, string(actualUserMessageRecordJson))
 
-	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualExecutedRunId)
+	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstReActRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(allSteps))
 
@@ -375,10 +381,8 @@ func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	assert.NoError(t, err)
 	assert.Empty(t, actualAgentMessageRecords)
 
-	actualActionRecords, err := teamDb.Queries.GetActionByStep(ctx, actualCurrentStepRecord.ID)
+	actualActionRecord, err := teamDb.Queries.GetActionByRun(ctx, actualFirstActionRunRecord.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, len(actualActionRecords), 1)
-	actualActionRecord := actualActionRecords[0]
 	actualToolCallJson, err := json.Marshal(actualActionRecord.ToolCall)
 	assert.NoError(t, err)
 	expectedToolCallJson := `{"type":"function", "id":"call_QEtzMbHEUaMIWL3ezXuxRRE5", "function":{"name":"get_current_weather","arguments":"{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}"}}`
@@ -387,9 +391,10 @@ func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	assert.Nil(t, actualActionRecord.ToolRequirementMessageID)
 }
 
-func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
+func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	var err error
-	defer wiremockClient.Reset()
+	wiremockClient.Reset()
+	// defer wiremockClient.Reset()
 	agent := agentProto
 
 	startOfTest := time.Now()
@@ -400,7 +405,7 @@ func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_for_the_followup_conversation_when_reasoning.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_with_tools.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
@@ -413,10 +418,40 @@ func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello! What is weather in Yerevan?", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0
+			"temperature": 1.0,
+			"parallel_tool_calls": true,
+			"tools": [
+    		    {
+    		        "type": "function",
+    		        "function": {
+    		            "name": "get_current_weather",
+						"strict": true,
+    		            "description": "Get the current weather in a given location",
+    		            "parameters": {
+    		                "type": "object",
+    		                "properties": {
+    		                    "location": {
+    		                        "type": "string",
+    		                        "description": "The city and state, e.g. San Francisco, CA"
+    		                    },
+    		                    "unit": {
+    		                        "type": "string",
+    		                        "enum": [
+    		                            "celsius",
+    		                            "fahrenheit"
+    		                        ]
+    		                    }
+    		                },
+    		                "required": [
+    		                    "location"
+    		                ]
+    		            }
+    		        }
+    		    }
+    		]
 		}`
 
 	firstResponseBodyJson :=
@@ -428,24 +463,56 @@ func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 			"choices": [
 				{
 					"index": 0,
+					"logprobs": {
+						"content": null,
+						"refusal": null
+					},
 					"message": {
 						"role": "assistant",
-						"content": "Hi! I am Jane.",
-						"tool_calls": null,
-						"function_call": { "name": "", "arguments": "" },
+						"content": "",
 						"refusal": "",
-						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
-						"annotations": null
+						"audio": {
+							"data": "",
+							"expires_at": 0,
+							"id": "",
+							"transcript": ""
+						},
+						"function_call": {
+							"arguments": "",
+							"name": ""
+						},
+						"tool_calls": [
+							{
+								"id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+								"type": "function",
+								"custom": {
+									"input": "",
+									"name": ""
+								},
+								"function": {
+									"name": "get_current_weather",
+									"arguments": "{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}"
+								}
+							}
+						],
+						"annotations": []
 					},
-					"finish_reason": "stop",
-					"logprobs": { "content": null, "refusal": null }
+					"finish_reason": "tool_calls"
 				}
 			],
 			"usage": {
 				"prompt_tokens": 15,
-				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"prompt_tokens_details": {
+					"cached_tokens": 0,
+					"audio_tokens": 0
+				},
 				"completion_tokens": 30,
-				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"completion_tokens_details": {
+					"accepted_prediction_tokens": 0,
+					"rejected_prediction_tokens": 0,
+					"reasoning_tokens": 0,
+					"audio_tokens": 0
+				},
 				"total_tokens": 45
 			},
 			"system_fingerprint": "",
@@ -455,7 +522,7 @@ func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	firstRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
 		WithBodyPattern(wiremock.EqualToJson(firstRequestBodyJson)).
-		InScenario("Second Message to Jane").
+		InScenario("First Message to Jane").
 		WhenScenarioStateIs(wiremock.ScenarioStateStarted).
 		WillReturnResponse(
 			wiremock.NewResponse().
@@ -468,11 +535,14 @@ func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
-	firstExecutedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstExecutedRuns.ExecutedRunIds))
+
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
 
 	secondRequestBodyJson :=
 		`{
@@ -535,11 +605,13 @@ func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	actualActionRunRecord := actualRunRecords[1]
+
+	_, _, err = agent.Act(ctx, actualActionRunRecord.ID, "Yerevan: 35 celsius", testLogger)
 	assert.NoError(t, err)
-	secondExecutedRuns, err := agent.Run(ctx, testLogger)
+
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondExecutedRuns.ExecutedRunIds))
 
 	verifyFirstRequestStub, err := wiremockClient.Verify(firstRequestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -553,6 +625,7 @@ func test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 
 func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_tool(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -635,17 +708,15 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	assert.NotEmpty(t, userMessageId)
-	runSummary, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(runSummary.ExecutedRunIds))
-	actualRunId := runSummary.ExecutedRunIds[0]
-
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
+	actualRunRecord := actualRunRecords[0]
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualRunRecord, err := teamDb.Queries.GetRun(ctx, actualRunId)
-	assert.NoError(t, err)
 	assert.Equal(t, actualRunRecord.Status, "completed")
 	assert.WithinRange(t, actualRunRecord.CreatedAt, startOfTest, startOfChecking)
 
@@ -664,7 +735,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	expectedUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedUserMessageRecordJson, string(actualUserMessageRecordJson))
 
-	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualRunId)
+	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allSteps))
 	actualStepRecord := allSteps[0]
@@ -686,6 +757,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 
 func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_tool_for_the_followup_conversation(t *testing.T) {
 	var err error
+	wiremockClient.Reset()
 	defer wiremockClient.Reset()
 	agent := agentProto
 
@@ -767,10 +839,12 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 
 	firstUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, firstUserMessageId)
-	firstExecutedRuns, err := agent.Run(ctx, testLogger)
+
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(firstExecutedRuns.ExecutedRunIds))
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
 	assert.NoError(t, err)
 
 	secondRequestBodyJson :=
@@ -836,17 +910,17 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 
 	secondUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, secondUserMessageId)
-	secondExecutedRuns, err := agent.Run(ctx, testLogger)
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(secondExecutedRuns.ExecutedRunIds))
+	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(actualRunRecords))
 	assert.NoError(t, err)
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualFirstRunId := firstExecutedRuns.ExecutedRunIds[0]
-	actualFirstRunRecord, err := teamDb.Queries.GetRun(ctx, actualFirstRunId)
+	actualFirstRunRecord := actualRunRecords[0]
 	assert.NoError(t, err)
 	assert.Equal(t, actualFirstRunRecord.Status, "completed")
 	assert.WithinRange(t, actualFirstRunRecord.CreatedAt, startOfTest, startOfChecking)
@@ -865,7 +939,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	expectedFirstUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
 	assert.JSONEq(t, expectedFirstUserMessageRecordJson, string(actualFirstUserMessageRecordJson))
 
-	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunId)
+	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allFirstSteps))
 	actualFirstStepRecord := allFirstSteps[0]
@@ -883,9 +957,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	expectedFirstAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`)
 	assert.JSONEq(t, expectedFirstAgentMessageRecordJson, string(actualFirstAgentMessageRecordJson))
 
-	actualSecondRunId := secondExecutedRuns.ExecutedRunIds[0]
-	actualSecondRunRecord, err := teamDb.Queries.GetRun(ctx, actualSecondRunId)
-	assert.NoError(t, err)
+	actualSecondRunRecord := actualRunRecords[1]
 	assert.Equal(t, actualSecondRunRecord.Status, "completed")
 	assert.WithinRange(t, actualSecondRunRecord.CreatedAt, startOfTest, startOfChecking)
 
@@ -903,7 +975,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	expectedSecondUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
 	assert.JSONEq(t, expectedSecondUserMessageRecordJson, string(actualSecondUserMessageRecordJson))
 
-	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunId)
+	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunRecord.ID)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allSecondSteps))
 	actualSecondStepRecord := allSecondSteps[0]

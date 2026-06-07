@@ -2,7 +2,6 @@ package OpenTeam
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
@@ -72,8 +71,6 @@ func (runtime *AgentRuntime) persistMentionsAndMessage(
 			logger.Error("failed to create mention", zap.Error(err))
 			return
 		}
-
-		fmt.Println("nextRunRecord", nextRunRecord) // todo
 
 		if runtime.ChangeStream != nil {
 

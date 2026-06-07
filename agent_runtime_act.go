@@ -16,7 +16,7 @@ var MissingToolCallIdError = errors.New("missing tool call id")
 
 func (runtime *AgentRuntime) Act(
 	ctx context.Context,
-	actionId string,
+	actionRunId string,
 	toolResult string,
 	logger *zap.Logger,
 ) (
@@ -43,19 +43,25 @@ func (runtime *AgentRuntime) Act(
 
 	qtx := runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
-	actionRecord, err := qtx.GetAction(ctx, actionId)
+	parentRunLinkRecord, err := qtx.GetParentRunLink(ctx, actionRunId)
+	if err != nil {
+		logger.Error("failed to get parent run link", zap.Error(err))
+		return
+	}
+
+	spawningStepRecord, err := qtx.GetStep(ctx, parentRunLinkRecord.SpawningStepID)
+	if err != nil {
+		logger.Error("failed to get spawning step", zap.Error(err))
+		return
+	}
+
+	actionRecord, err := qtx.GetActionByRun(ctx, actionRunId)
 	if err != nil {
 		logger.Error("failed to get action", zap.Error(err))
 		return
 	}
 
-	stepRecord, err := qtx.GetStep(ctx, actionRecord.StepID)
-	if err != nil {
-		logger.Error("failed to get step", zap.Error(err))
-		return
-	}
-
-	taskRecord, err := qtx.GetTask(ctx, stepRecord.TaskID)
+	taskRecord, err := qtx.GetTask(ctx, spawningStepRecord.TaskID)
 	if err != nil {
 		logger.Error("failed to get task", zap.Error(err))
 		return

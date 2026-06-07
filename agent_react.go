@@ -567,7 +567,6 @@ func (agent *agenticReActLoop) persistAction(
 	createActionParams := entities.CreateActionParams{
 		ID:       ulid.Make().String(),
 		RunID:    nextRunRecord.ID,
-		StepID:   agent.stepRecord.ID,
 		ToolCall: json.RawMessage(toolCallBytes),
 	}
 

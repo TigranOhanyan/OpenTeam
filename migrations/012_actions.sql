@@ -2,7 +2,6 @@
 CREATE TABLE actions (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL UNIQUE,
-    step_id TEXT NOT NULL,
     tool_call JSON NOT NULL,
     tool_requirement_message_id TEXT NULL UNIQUE,
     tool_result_message_id TEXT NULL UNIQUE,

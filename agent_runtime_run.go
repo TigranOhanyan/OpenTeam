@@ -17,7 +17,6 @@ func (runtime *AgentRuntime) Run(
 	ctx context.Context,
 	logger *zap.Logger,
 ) (
-	runSummary RunSummary,
 	err error,
 ) {
 	defer func() {
@@ -25,6 +24,8 @@ func (runtime *AgentRuntime) Run(
 			close(runtime.ChangeStream)
 		}
 	}()
+
+	var runSummary RunSummary
 
 	// Single-threaded synchronous event loop.
 	// We continually pull incomplete runs and their children without any lead ID,

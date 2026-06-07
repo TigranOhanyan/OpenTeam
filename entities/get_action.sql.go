@@ -10,7 +10,7 @@ import (
 )
 
 const getAction = `-- name: GetAction :one
-SELECT id, run_id, step_id, tool_call, tool_requirement_message_id, tool_result_message_id FROM actions WHERE id = ? LIMIT 1
+SELECT id, run_id, tool_call, tool_requirement_message_id, tool_result_message_id FROM actions WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetAction(ctx context.Context, id string) (Action, error) {
@@ -19,7 +19,6 @@ func (q *Queries) GetAction(ctx context.Context, id string) (Action, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.RunID,
-		&i.StepID,
 		&i.ToolCall,
 		&i.ToolRequirementMessageID,
 		&i.ToolResultMessageID,

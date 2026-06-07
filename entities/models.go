@@ -13,7 +13,6 @@ import (
 type Action struct {
 	ID                       string          `json:"id"`
 	RunID                    string          `json:"run_id"`
-	StepID                   string          `json:"step_id"`
 	ToolCall                 json.RawMessage `json:"tool_call"`
 	ToolRequirementMessageID interface{}     `json:"tool_requirement_message_id"`
 	ToolResultMessageID      interface{}     `json:"tool_result_message_id"`

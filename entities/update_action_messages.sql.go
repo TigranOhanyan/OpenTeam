@@ -12,7 +12,7 @@ import (
 const updateActionMessages = `-- name: UpdateActionMessages :one
 UPDATE actions 
 SET tool_requirement_message_id = ?, tool_result_message_id = ? 
-WHERE id = ? RETURNING id, run_id, step_id, tool_call, tool_requirement_message_id, tool_result_message_id
+WHERE id = ? RETURNING id, run_id, tool_call, tool_requirement_message_id, tool_result_message_id
 `
 
 type UpdateActionMessagesParams struct {
@@ -27,7 +27,6 @@ func (q *Queries) UpdateActionMessages(ctx context.Context, arg UpdateActionMess
 	err := row.Scan(
 		&i.ID,
 		&i.RunID,
-		&i.StepID,
 		&i.ToolCall,
 		&i.ToolRequirementMessageID,
 		&i.ToolResultMessageID,
