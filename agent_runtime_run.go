@@ -17,7 +17,7 @@ func (runtime *AgentRuntime) Run(
 	ctx context.Context,
 	logger *zap.Logger,
 ) (
-	executedRuns ExecutedRuns,
+	runSummary RunSummary,
 	err error,
 ) {
 	defer func() {
@@ -63,6 +63,7 @@ func (runtime *AgentRuntime) Run(
 			// Check if all children are completed
 
 			if children.runKind != "mention" {
+				runSummary.SkippedRunIds = append(runSummary.SkippedRunIds, runID)
 				continue
 			}
 
@@ -75,6 +76,7 @@ func (runtime *AgentRuntime) Run(
 			}
 
 			if !allChildrenCompleted {
+				runSummary.SkippedRunIds = append(runSummary.SkippedRunIds, runID)
 				continue // Waiting on children
 			}
 
@@ -107,7 +109,7 @@ func (runtime *AgentRuntime) Run(
 			break
 		}
 
-		executedRuns.RunIds = executedRunsOfIteration
+		runSummary.ExecutedRunIds = executedRunsOfIteration
 
 	}
 

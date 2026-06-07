@@ -78,7 +78,7 @@ func (runtime *AgentRuntime) createAgent(
 	}
 	logger = logger.With(zap.String("roleId", fromRoleRecord.ID))
 
-	channelRecord, err := qtx.GetChannelByRole(ctx, fromRoleRecord.ID)
+	channelRecord, err := qtx.GetChannel(ctx, fromRoleRecord.ChannelName)
 	if err != nil {
 		logger.Error("failed to get channel", zap.Error(err))
 		return

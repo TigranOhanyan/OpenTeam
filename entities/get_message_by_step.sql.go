@@ -9,22 +9,38 @@ import (
 	"context"
 )
 
-const getMessageByStep = `-- name: GetMessageByStep :one
-SELECT id, step_id, channel_name, role_id, task_id, visibility, openai_message, created_at FROM messages WHERE step_id = ? LIMIT 1
+const getMessageByStep = `-- name: GetMessageByStep :many
+SELECT id, step_id, channel_name, role_id, task_id, visibility, openai_message, created_at FROM messages WHERE step_id = ?
 `
 
-func (q *Queries) GetMessageByStep(ctx context.Context, stepID interface{}) (Message, error) {
-	row := q.db.QueryRowContext(ctx, getMessageByStep, stepID)
-	var i Message
-	err := row.Scan(
-		&i.ID,
-		&i.StepID,
-		&i.ChannelName,
-		&i.RoleID,
-		&i.TaskID,
-		&i.Visibility,
-		&i.OpenaiMessage,
-		&i.CreatedAt,
-	)
-	return i, err
+func (q *Queries) GetMessageByStep(ctx context.Context, stepID interface{}) ([]Message, error) {
+	rows, err := q.db.QueryContext(ctx, getMessageByStep, stepID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Message
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.StepID,
+			&i.ChannelName,
+			&i.RoleID,
+			&i.TaskID,
+			&i.Visibility,
+			&i.OpenaiMessage,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
