@@ -37,7 +37,7 @@ func Test_Agent_should_call_llm_with_tools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLWithToolsMTest(ctx, teamDb)
+	err = makeTeamForCallLLWithToolsTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -192,7 +192,7 @@ func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLWithToolsMTest(ctx, teamDb)
+	err = makeTeamForCallLLWithToolsTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -409,7 +409,7 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLWithToolsMTest(ctx, teamDb)
+	err = makeTeamForCallLLWithToolsTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -674,7 +674,7 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 
 }
 
-func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_tool(t *testing.T) {
+func Test_Agent_should_persist_the_conversation_history_when_providing_tool_result(t *testing.T) {
 	var err error
 	wiremockClient.Reset()
 	defer wiremockClient.Reset()
@@ -688,143 +688,11 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_first_message_when_reasoning.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_when_providing_tool_result.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
-	err = makeTeamForCallLLWithToolsMTest(ctx, teamDb)
-	assert.NoError(t, err)
-
-	agent.ConversationHistoryDb = teamDb
-
-	requestBodyJson :=
-		`{
-			"model": "gpt-5",
-			"messages": [
-				{"role": "user", "content": "Hello!", "name": "Jim"}
-			],
-			"n": 1,
-			"temperature": 1.0
-		}`
-
-	responseBodyJson :=
-		`{
-			"id": "chatcmpl-123",
-			"object": "chat.completion",
-			"created": 1677652288,
-			"model": "gpt-5",
-			"choices": [
-				{
-					"index": 0,
-					"message": {
-						"role": "assistant",
-						"content": "Hi! I am Jane.",
-						"tool_calls": null,
-						"function_call": { "name": "", "arguments": "" },
-						"refusal": "",
-						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
-						"annotations": null
-					},
-					"finish_reason": "stop",
-					"logprobs": { "content": null, "refusal": null }
-				}
-			],
-			"usage": {
-				"prompt_tokens": 15,
-				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
-				"completion_tokens": 30,
-				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
-				"total_tokens": 45
-			},
-			"system_fingerprint": "",
-			"service_tier": ""
-		}`
-
-	requestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
-		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
-		WithBodyPattern(wiremock.EqualToJson(requestBodyJson)).
-		InScenario("First Message to Jane").
-		WhenScenarioStateIs(wiremock.ScenarioStateStarted).
-		WillReturnResponse(
-			wiremock.NewResponse().
-				WithStatus(http.StatusOK).
-				WithHeader("Content-Type", "application/json").
-				WithBody(responseBodyJson),
-		).
-		WillSetStateTo("first-message-received")
-
-	err = wiremockClient.StubFor(requestStub)
-	assert.NoError(t, err)
-
-	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
-	assert.NoError(t, err)
-
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
-	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(actualRunRecords))
-	actualRunRecord := actualRunRecords[0]
-	startOfChecking := time.Now()
-	startOfChecking = startOfChecking.Add(time.Second)
-
-	assert.Equal(t, actualRunRecord.Status, "completed")
-	assert.WithinRange(t, actualRunRecord.CreatedAt, startOfTest, startOfChecking)
-
-	actualMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualRunRecord.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualMentionRecord.MessageID, userMessageId)
-	assert.Equal(t, actualMentionRecord.FromMemberRoleID, "jim-at-lobby")
-	assert.Equal(t, actualMentionRecord.ToMemberName, "Jane")
-	assert.Equal(t, actualMentionRecord.Message, "Hello!")
-
-	actualUserMessageRecord, err := teamDb.Queries.GetMessage(ctx, actualMentionRecord.MessageID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualUserMessageRecord.Visibility, string(VisibilityChannel))
-	actualUserMessageRecordJson, err := json.Marshal(actualUserMessageRecord.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
-	assert.JSONEq(t, expectedUserMessageRecordJson, string(actualUserMessageRecordJson))
-
-	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualRunRecord.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(allSteps))
-	actualStepRecord := allSteps[0]
-	assert.Equal(t, actualStepRecord.Status, "completed")
-	assert.WithinRange(t, actualStepRecord.CreatedAt, startOfTest, startOfChecking)
-	assert.Equal(t, actualStepRecord.TaskID, "jane-lobby-first-impression")
-
-	actualAgentMessageRecords, err := teamDb.Queries.GetMessageByStep(ctx, actualStepRecord.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, len(actualAgentMessageRecords), 1)
-	actualAgentMessageRecord := actualAgentMessageRecords[0]
-	assert.Equal(t, actualAgentMessageRecord.Visibility, string(VisibilityChannel))
-	actualAgentMessageRecordJson, err := json.Marshal(actualAgentMessageRecord.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`)
-	assert.JSONEq(t, expectedAgentMessageRecordJson, string(actualAgentMessageRecordJson))
-
-}
-
-func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_tool_for_the_followup_conversation(t *testing.T) {
-	var err error
-	wiremockClient.Reset()
-	defer wiremockClient.Reset()
-	agent := agentProto
-
-	startOfTest := time.Now()
-	startOfTest = startOfTest.Add(-time.Second)
-
-	teamDbFactory, err := NewTeamDbFactory(tempFolder, testLogger)
-	assert.NoError(t, err)
-
-	ctx := context.TODO()
-
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_persist_the_conversation_history_for_the_followup_conversation_when_reasoning.db", testLogger)
-	assert.NoError(t, err)
-	assert.NotNil(t, teamDb)
-	defer teamDb.Close()
-	err = makeTeamForCallLLWithToolsMTest(ctx, teamDb)
+	err = makeTeamForCallLLWithToolsTest(ctx, teamDb)
 	assert.NoError(t, err)
 
 	agent.ConversationHistoryDb = teamDb
@@ -833,10 +701,40 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 		`{
 			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello!", "name": "Jim"}
+				{"role": "user", "content": "Hello! What is weather in Yerevan?", "name": "Jim"}
 			],
 			"n": 1,
-			"temperature": 1.0
+			"temperature": 1.0,
+			"parallel_tool_calls": true,
+			"tools": [
+    		    {
+    		        "type": "function",
+    		        "function": {
+    		            "name": "get_current_weather",
+						"strict": true,
+    		            "description": "Get the current weather in a given location",
+    		            "parameters": {
+    		                "type": "object",
+    		                "properties": {
+    		                    "location": {
+    		                        "type": "string",
+    		                        "description": "The city and state, e.g. San Francisco, CA"
+    		                    },
+    		                    "unit": {
+    		                        "type": "string",
+    		                        "enum": [
+    		                            "celsius",
+    		                            "fahrenheit"
+    		                        ]
+    		                    }
+    		                },
+    		                "required": [
+    		                    "location"
+    		                ]
+    		            }
+    		        }
+    		    }
+    		]
 		}`
 
 	firstResponseBodyJson :=
@@ -848,24 +746,56 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 			"choices": [
 				{
 					"index": 0,
+					"logprobs": {
+						"content": null,
+						"refusal": null
+					},
 					"message": {
 						"role": "assistant",
-						"content": "Hi! I am Jane.",
-						"tool_calls": null,
-						"function_call": { "name": "", "arguments": "" },
+						"content": "",
 						"refusal": "",
-						"audio": { "id": "", "data": "", "transcript": "", "expires_at": 0 },
-						"annotations": null
+						"audio": {
+							"data": "",
+							"expires_at": 0,
+							"id": "",
+							"transcript": ""
+						},
+						"function_call": {
+							"arguments": "",
+							"name": ""
+						},
+						"tool_calls": [
+							{
+								"id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+								"type": "function",
+								"custom": {
+									"input": "",
+									"name": ""
+								},
+								"function": {
+									"name": "get_current_weather",
+									"arguments": "{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}"
+								}
+							}
+						],
+						"annotations": []
 					},
-					"finish_reason": "stop",
-					"logprobs": { "content": null, "refusal": null }
+					"finish_reason": "tool_calls"
 				}
 			],
 			"usage": {
 				"prompt_tokens": 15,
-				"prompt_tokens_details": {"cached_tokens":0,"audio_tokens":0},
+				"prompt_tokens_details": {
+					"cached_tokens": 0,
+					"audio_tokens": 0
+				},
 				"completion_tokens": 30,
-				"completion_tokens_details": {"accepted_prediction_tokens":0,"rejected_prediction_tokens":0,"reasoning_tokens":0,"audio_tokens":0},
+				"completion_tokens_details": {
+					"accepted_prediction_tokens": 0,
+					"rejected_prediction_tokens": 0,
+					"reasoning_tokens": 0,
+					"audio_tokens": 0
+				},
 				"total_tokens": 45
 			},
 			"system_fingerprint": "",
@@ -875,7 +805,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	firstRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
 		WithBodyPattern(wiremock.EqualToJson(firstRequestBodyJson)).
-		InScenario("Second Message to Jane").
+		InScenario("Provide tool result").
 		WhenScenarioStateIs(wiremock.ScenarioStateStarted).
 		WillReturnResponse(
 			wiremock.NewResponse().
@@ -888,26 +818,67 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
-	assert.NoError(t, err)
-
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
-	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(actualRunRecords))
-	assert.NoError(t, err)
-
 	secondRequestBodyJson :=
 		`{
-			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello!", "name": "Jim"},
-				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "How are you?", "name": "Jim"}
+				{
+					"content": "Hello! What is weather in Yerevan?",
+					"name": "Jim",
+					"role": "user"
+				},
+				{
+					"name": "Jane",
+					"tool_calls": [
+						{
+							"id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+							"function": {
+								"arguments": "{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}",
+								"name": "get_current_weather"
+							},
+							"type": "function"
+						}
+					],
+					"role": "assistant"
+				},
+				{
+					"content": "Yerevan: 35 celsius",
+					"tool_call_id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+					"role": "tool"
+				}
 			],
+			"model": "gpt-5",
 			"n": 1,
-			"temperature": 1.0
+			"temperature": 1,
+			"parallel_tool_calls": true,
+			"tools": [
+				{
+					"function": {
+						"name": "get_current_weather",
+						"strict": true,
+						"description": "Get the current weather in a given location",
+						"parameters": {
+							"properties": {
+									"location": {
+										"description": "The city and state, e.g. San Francisco, CA",
+										"type": "string"
+									},
+									"unit": {
+										"enum": [
+											"celsius",
+											"fahrenheit"
+										],
+										"type": "string"
+									}
+							},
+							"required": [
+								"location"
+							],
+							"type": "object"
+						}
+					},
+					"type": "function"
+				}
+			]
 		}`
 
 	secondResponseBodyJson :=
@@ -921,7 +892,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 					"index": 0,
 					"message": {
 						"role": "assistant",
-						"content": "I'm fine, thank you!",
+						"content": "It is 35 celsius in Yerevan.",
 						"tool_calls": null,
 						"function_call": { "name": "", "arguments": "" },
 						"refusal": "",
@@ -946,7 +917,7 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	secondRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
 		WithBodyPattern(wiremock.EqualToJson(secondRequestBodyJson)).
-		InScenario("Second Message to Jane").
+		InScenario("Provide tool result").
 		WhenScenarioStateIs("first-message-received").
 		WillReturnResponse(
 			wiremock.NewResponse().
@@ -959,93 +930,114 @@ func test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
 	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
-	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
+
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(actualRunRecords))
+	assert.Equal(t, 2, len(actualRunRecords))
+
+	actualActionRunRecord := actualRunRecords[1]
+
+	_, _, err = agent.Act(ctx, actualActionRunRecord.ID, "Yerevan: 35 celsius", testLogger)
+	assert.NoError(t, err)
+
+	err = agent.Run(ctx, testLogger)
 	assert.NoError(t, err)
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)
 
-	actualFirstRunRecord := actualRunRecords[0]
+	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, actualFirstRunRecord.Status, "completed")
-	assert.WithinRange(t, actualFirstRunRecord.CreatedAt, startOfTest, startOfChecking)
+	assert.Equal(t, 2, len(actualRunRecords))
 
-	actualFirstMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualFirstRunRecord.ID)
+	actualFirstReActRunRecord := actualRunRecords[0]
 	assert.NoError(t, err)
-	assert.Equal(t, actualFirstMentionRecord.MessageID, firstUserMessageId)
-	assert.Equal(t, actualFirstMentionRecord.FromMemberRoleID, "jim-at-lobby")
-	assert.Equal(t, actualFirstMentionRecord.ToMemberName, "Jane")
-	assert.Equal(t, actualFirstMentionRecord.Message, "Hello!")
-	actualFirstUserMessageRecord, err := teamDb.Queries.GetMessage(ctx, actualFirstMentionRecord.MessageID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualFirstUserMessageRecord.Visibility, string(VisibilityChannel))
-	actualFirstUserMessageRecordJson, err := json.Marshal(actualFirstUserMessageRecord.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedFirstUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"Hello!","role":"user"}`)
-	assert.JSONEq(t, expectedFirstUserMessageRecordJson, string(actualFirstUserMessageRecordJson))
+	assert.Equal(t, actualFirstReActRunRecord.Status, "completed")
+	assert.WithinRange(t, actualFirstReActRunRecord.CreatedAt, startOfTest, startOfChecking)
 
-	allFirstSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstRunRecord.ID)
+	actualFirstActionRunRecord := actualRunRecords[1]
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(allFirstSteps))
-	actualFirstStepRecord := allFirstSteps[0]
+	assert.Equal(t, actualFirstActionRunRecord.Status, "completed")
+	assert.WithinRange(t, actualFirstActionRunRecord.CreatedAt, startOfTest, startOfChecking)
+
+	allSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualFirstReActRunRecord.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(allSteps))
+
+	actualFirstStepRecord := allSteps[0]
 	assert.Equal(t, actualFirstStepRecord.Status, "completed")
 	assert.WithinRange(t, actualFirstStepRecord.CreatedAt, startOfTest, startOfChecking)
 	assert.Equal(t, actualFirstStepRecord.TaskID, "jane-lobby-first-impression")
 
-	actualFirstAgentMessageRecords, err := teamDb.Queries.GetMessageByStep(ctx, actualFirstStepRecord.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, len(actualFirstAgentMessageRecords), 1)
-	actualFirstAgentMessageRecord := actualFirstAgentMessageRecords[0]
-	assert.Equal(t, actualFirstAgentMessageRecord.Visibility, string(VisibilityChannel))
-	actualFirstAgentMessageRecordJson, err := json.Marshal(actualFirstAgentMessageRecord.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedFirstAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"Hi! I am Jane.","role":"user"}`)
-	assert.JSONEq(t, expectedFirstAgentMessageRecordJson, string(actualFirstAgentMessageRecordJson))
-
-	actualSecondRunRecord := actualRunRecords[1]
-	assert.Equal(t, actualSecondRunRecord.Status, "completed")
-	assert.WithinRange(t, actualSecondRunRecord.CreatedAt, startOfTest, startOfChecking)
-
-	actualSecondMentionRecord, err := teamDb.Queries.GetMentionByRun(ctx, actualSecondRunRecord.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualSecondMentionRecord.MessageID, secondUserMessageId)
-	assert.Equal(t, actualSecondMentionRecord.FromMemberRoleID, "jim-at-lobby")
-	assert.Equal(t, actualSecondMentionRecord.ToMemberName, "Jane")
-	assert.Equal(t, actualSecondMentionRecord.Message, "How are you?")
-	actualSecondUserMessageRecord, err := teamDb.Queries.GetMessage(ctx, actualSecondMentionRecord.MessageID)
-	assert.NoError(t, err)
-	assert.Equal(t, actualSecondUserMessageRecord.Visibility, string(VisibilityChannel))
-	actualSecondUserMessageRecordJson, err := json.Marshal(actualSecondUserMessageRecord.OpenaiMessage)
-	assert.NoError(t, err)
-	expectedSecondUserMessageRecordJson := fmt.Sprintf(`{"name":"Jim","content":"How are you?","role":"user"}`)
-	assert.JSONEq(t, expectedSecondUserMessageRecordJson, string(actualSecondUserMessageRecordJson))
-
-	allSecondSteps, err := teamDb.Queries.GetStepsByRunId(ctx, actualSecondRunRecord.ID)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(allSecondSteps))
-	actualSecondStepRecord := allSecondSteps[0]
+	actualSecondStepRecord := allSteps[1]
 	assert.Equal(t, actualSecondStepRecord.Status, "completed")
 	assert.WithinRange(t, actualSecondStepRecord.CreatedAt, startOfTest, startOfChecking)
 	assert.Equal(t, actualSecondStepRecord.TaskID, "jane-lobby-first-impression")
-	actualSecondAgentMessageRecords, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondStepRecord.ID)
+
+	actualSecondLlmResponseRecord, err := teamDb.Queries.GetLlmResponseByStep(ctx, actualSecondStepRecord.ID)
 	assert.NoError(t, err)
-	assert.Equal(t, len(actualSecondAgentMessageRecords), 1)
-	actualSecondAgentMessageRecord := actualSecondAgentMessageRecords[0]
-	assert.Equal(t, actualSecondAgentMessageRecord.Visibility, string(VisibilityChannel))
-	actualSecondAgentMessageRecordJson, err := json.Marshal(actualSecondAgentMessageRecord.OpenaiMessage)
+	assert.WithinRange(t, actualSecondLlmResponseRecord.CreatedAt, startOfTest, startOfChecking)
+	assert.Equal(t, actualSecondLlmResponseRecord.TaskID, "jane-lobby-first-impression")
+	actualSecondLlmResponseJson, err := json.Marshal(actualSecondLlmResponseRecord.OpenaiResponse)
 	assert.NoError(t, err)
-	expectedSecondAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"I'm fine, thank you!","role":"user"}`)
-	assert.JSONEq(t, expectedSecondAgentMessageRecordJson, string(actualSecondAgentMessageRecordJson))
+	assert.JSONEq(t, secondResponseBodyJson, string(actualSecondLlmResponseJson))
+
+	actualAgentMessageRecords, err := teamDb.Queries.GetMessageByStep(ctx, actualSecondStepRecord.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, len(actualAgentMessageRecords), 1)
+	actualAgentMessageRecord := actualAgentMessageRecords[0]
+	assert.Equal(t, actualAgentMessageRecord.Visibility, string(VisibilityChannel))
+	actualAgentMessageRecordJson, err := json.Marshal(actualAgentMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedAgentMessageRecordJson := fmt.Sprintf(`{"name":"Jane","content":"It is 35 celsius in Yerevan.","role":"user"}`)
+	assert.JSONEq(t, expectedAgentMessageRecordJson, string(actualAgentMessageRecordJson))
+
+	actualAllMessageRecords, err := teamDb.Queries.GetMessages(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, len(actualAllMessageRecords), 4)
+	actualToolRequirmentMessageRecord := actualAllMessageRecords[1]
+	assert.Equal(t, actualToolRequirmentMessageRecord.Visibility, string(VisibilityTask))
+	actualToolRequirmentMessageRecordJson, err := json.Marshal(actualToolRequirmentMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedToolRequirmentMessageRecordJson := fmt.Sprintf(`{
+					"name": "Jane",
+					"tool_calls": [
+						{
+							"id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+							"function": {
+								"arguments": "{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}",
+								"name": "get_current_weather"
+							},
+							"type": "function"
+						}
+					],
+					"role": "assistant"
+				}`)
+	assert.JSONEq(t, expectedToolRequirmentMessageRecordJson, string(actualToolRequirmentMessageRecordJson))
+
+	actualToolResultMessageRecord := actualAllMessageRecords[2]
+	assert.Equal(t, actualToolResultMessageRecord.Visibility, string(VisibilityTask))
+	actualToolResultMessageRecordJson, err := json.Marshal(actualToolResultMessageRecord.OpenaiMessage)
+	assert.NoError(t, err)
+	expectedToolResultMessageRecordJson := fmt.Sprintf(`{
+					"content": "Yerevan: 35 celsius",
+					"tool_call_id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+					"role": "tool"
+				}`)
+	assert.JSONEq(t, expectedToolResultMessageRecordJson, string(actualToolResultMessageRecordJson))
+
+	actualActionRecord, err := teamDb.Queries.GetActionByRun(ctx, actualFirstActionRunRecord.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, actualActionRecord.ToolResultMessageID, actualToolResultMessageRecord.ID)
+	assert.Equal(t, actualActionRecord.ToolRequirementMessageID, actualToolRequirmentMessageRecord.ID)
 
 }
 
-func makeTeamForCallLLWithToolsMTest(ctx context.Context, teamDb *TeamDb) (err error) {
+func makeTeamForCallLLWithToolsTest(ctx context.Context, teamDb *TeamDb) (err error) {
 	q := teamDb.Queries
 
 	jane, err := q.CreateMember(ctx, entities.CreateMemberParams{

@@ -299,7 +299,7 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 func Test_Agent_should_call_llm_by_providing_tool_result_in_stream_mode(t *testing.T) {
 	var err error
 	wiremockClient.Reset()
-	// defer wiremockClient.Reset()
+	defer wiremockClient.Reset()
 	agent := agentProto
 
 	startOfTest := time.Now()

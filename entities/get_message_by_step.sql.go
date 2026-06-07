@@ -10,7 +10,7 @@ import (
 )
 
 const getMessageByStep = `-- name: GetMessageByStep :many
-SELECT id, step_id, channel_name, role_id, task_id, visibility, openai_message, created_at FROM messages WHERE step_id = ?
+SELECT id, step_id, channel_name, role_id, task_id, visibility, openai_message, created_at FROM messages WHERE step_id = ? ORDER BY id ASC
 `
 
 func (q *Queries) GetMessageByStep(ctx context.Context, stepID interface{}) ([]Message, error) {
