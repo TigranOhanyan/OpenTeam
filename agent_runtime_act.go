@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
@@ -24,6 +25,10 @@ func (runtime *AgentRuntime) Act(
 	toolResultMessageId string,
 	err error,
 ) {
+
+	logger = logger.With(zap.String("actionRunId", actionRunId))
+	logger.Info("persisting tool requirement and tool result messages...")
+
 	defer func() {
 		if runtime.ChangeStream != nil {
 			close(runtime.ChangeStream)
@@ -78,8 +83,6 @@ func (runtime *AgentRuntime) Act(
 		logger.Error("failed to get user room", zap.Error(err))
 		return
 	}
-
-	// func (r ChatCompletionMessageToolCallUnion) ToParam() ChatCompletionMessageToolCallUnionParam
 
 	messageIdPrefix := ulid.Make().String()
 	toolRequirementMessageId = messageIdPrefix + "-0-tool-requirement"
@@ -169,9 +172,18 @@ func (runtime *AgentRuntime) Act(
 		return
 	}
 
+	logger.Info("completing run...")
+	fmt.Println(actionRecord.RunID)
+
 	_, err = qtx.CompleteRun(ctx, actionRecord.RunID)
 	if err != nil {
 		logger.Error("failed to complete run", zap.Error(err))
+		return
+	}
+
+	err = trx.Commit()
+	if err != nil {
+		logger.Error("failed to commit transaction", zap.Error(err))
 		return
 	}
 

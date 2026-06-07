@@ -296,6 +296,217 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
 
 }
 
+func Test_Agent_should_call_llm_by_providing_tool_result_in_stream_mode(t *testing.T) {
+	var err error
+	wiremockClient.Reset()
+	// defer wiremockClient.Reset()
+	agent := agentProto
+
+	startOfTest := time.Now()
+	startOfTest = startOfTest.Add(-time.Second)
+
+	teamDbFactory, err := NewTeamDbFactory(tempFolder, testLogger)
+	assert.NoError(t, err)
+
+	ctx := context.TODO()
+
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_by_providing_tool_result_in_stream_mode.db", testLogger)
+	assert.NoError(t, err)
+	assert.NotNil(t, teamDb)
+	defer teamDb.Close()
+	err = makeTeamForCallLLWithToolsTestInStreamMode(ctx, teamDb)
+	assert.NoError(t, err)
+
+	agent.ConversationHistoryDb = teamDb
+
+	firstRequestBodyJson :=
+		`{
+			"model": "gpt-5",
+			"messages": [
+				{"role": "user", "content": "Hello! What is weather in Yerevan?", "name": "Jim"}
+			],
+			"n": 1,
+			"temperature": 1.0,
+  			"stream": true,
+			"parallel_tool_calls": true,
+			"tools": [
+    		    {
+    		        "type": "function",
+    		        "function": {
+    		            "name": "get_current_weather",
+						"strict": true,
+    		            "description": "Get the current weather in a given location",
+    		            "parameters": {
+    		                "type": "object",
+    		                "properties": {
+    		                    "location": {
+    		                        "type": "string",
+    		                        "description": "The city and state, e.g. San Francisco, CA"
+    		                    },
+    		                    "unit": {
+    		                        "type": "string",
+    		                        "enum": [
+    		                            "celsius",
+    		                            "fahrenheit"
+    		                        ]
+    		                    }
+    		                },
+    		                "required": [
+    		                    "location"
+    		                ]
+    		            }
+    		        }
+    		    }
+    		]
+		}`
+
+	firstResponseChunk1 :=
+		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content": null,"tool_calls": [{"index": 0,"id": "call_yAzMF0nANbOqdFD4hNkezNTM","type": "function","function": {"name": "get_current_weather","arguments": ""}}],"refusal": null},"finish_reason":null}]}`
+	firstResponseChunk2 :=
+		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"tool_calls": [{"index": 0,"function": {"arguments": "{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}"}}]},"finish_reason":null}]}`
+	firstResponseChunk3 :=
+		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`
+	firstResponseChunk4 :=
+		`[DONE]`
+
+	firstResponseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\ndata: %s\n\n", firstResponseChunk1, firstResponseChunk2, firstResponseChunk3, firstResponseChunk4)
+
+	firstRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
+		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
+		WithBodyPattern(wiremock.EqualToJson(firstRequestBodyJson)).
+		InScenario("Provide tool result").
+		WhenScenarioStateIs(wiremock.ScenarioStateStarted).
+		WillReturnResponse(
+			wiremock.NewResponse().
+				WithStatus(http.StatusOK).
+				WithHeader("Content-Type", "text/event-stream").
+				WithHeader("Cache-Control", "no-cache").
+				WithHeader("Connection", "keep-alive").
+				WithBody(firstResponseBodySse),
+		).
+		WillSetStateTo("first-message-received")
+
+	err = wiremockClient.StubFor(firstRequestStub)
+	assert.NoError(t, err)
+
+	secondRequestBodyJson :=
+		`{
+			"messages": [
+				{
+					"content": "Hello! What is weather in Yerevan?",
+					"name": "Jim",
+					"role": "user"
+				},
+				{
+					"name": "Jane",
+					"tool_calls": [
+						{
+							"id": "call_yAzMF0nANbOqdFD4hNkezNTM",
+							"function": {
+								"arguments": "{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}",
+								"name": "get_current_weather"
+							},
+							"type": "function"
+						}
+					],
+					"role": "assistant"
+				},
+				{
+					"content": "Yerevan: 35 celsius",
+					"tool_call_id": "call_yAzMF0nANbOqdFD4hNkezNTM",
+					"role": "tool"
+				}
+			],
+			"model": "gpt-5",
+			"n": 1,
+			"temperature": 1,
+  			"stream": true,
+			"parallel_tool_calls": true,
+			"tools": [
+				{
+					"function": {
+						"name": "get_current_weather",
+						"strict": true,
+						"description": "Get the current weather in a given location",
+						"parameters": {
+							"properties": {
+									"location": {
+										"description": "The city and state, e.g. San Francisco, CA",
+										"type": "string"
+									},
+									"unit": {
+										"enum": [
+											"celsius",
+											"fahrenheit"
+										],
+										"type": "string"
+									}
+							},
+							"required": [
+								"location"
+							],
+							"type": "object"
+						}
+					},
+					"type": "function"
+				}
+			]
+		}`
+
+	secondResponseChunk1 :=
+		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":"It is 35 celsius in Yerevan."},"finish_reason":null}]}`
+	secondResponseChunk2 :=
+		`{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
+	secondResponseChunk3 :=
+		`[DONE]`
+
+	secondResponseBodySse := fmt.Sprintf("data: %s\n\ndata: %s\n\ndata: %s\n\n", secondResponseChunk1, secondResponseChunk2, secondResponseChunk3)
+
+	secondRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
+		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
+		WithBodyPattern(wiremock.EqualToJson(secondRequestBodyJson)).
+		InScenario("Provide tool result").
+		WhenScenarioStateIs("first-message-received").
+		WillReturnResponse(
+			wiremock.NewResponse().
+				WithStatus(http.StatusOK).
+				WithHeader("Content-Type", "text/event-stream").
+				WithHeader("Cache-Control", "no-cache").
+				WithHeader("Connection", "keep-alive").
+				WithBody(secondResponseBodySse),
+		).
+		WillSetStateTo("second-message-received")
+
+	err = wiremockClient.StubFor(secondRequestStub)
+	assert.NoError(t, err)
+
+	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
+	assert.NoError(t, err)
+	err = agent.Run(ctx, testLogger)
+	assert.NoError(t, err)
+
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
+
+	actualActionRunRecord := actualRunRecords[1]
+
+	_, _, err = agent.Act(ctx, actualActionRunRecord.ID, "Yerevan: 35 celsius", testLogger)
+	assert.NoError(t, err)
+
+	err = agent.Run(ctx, testLogger)
+	assert.NoError(t, err)
+
+	verifyFirstRequestStub, err := wiremockClient.Verify(firstRequestStub.Request(), 1)
+	assert.NoError(t, err)
+	assert.True(t, verifyFirstRequestStub)
+
+	verifySecondRequestStub, err := wiremockClient.Verify(secondRequestStub.Request(), 1)
+	assert.NoError(t, err)
+	assert.True(t, verifySecondRequestStub)
+
+}
+
 func test_Agent_should_call_llm_for_the_followup_conversation_with_tools_in_stream_mode(t *testing.T) {
 	var err error
 	wiremockClient.Reset()

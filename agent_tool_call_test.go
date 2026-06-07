@@ -394,7 +394,7 @@ func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	var err error
 	wiremockClient.Reset()
-	// defer wiremockClient.Reset()
+	defer wiremockClient.Reset()
 	agent := agentProto
 
 	startOfTest := time.Now()
@@ -405,7 +405,7 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 
 	ctx := context.TODO()
 
-	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_with_tools.db", testLogger)
+	teamDb, err := teamDbFactory.NewTeamDb(ctx, "Agent_should_call_llm_by_providing_tool_result.db", testLogger)
 	assert.NoError(t, err)
 	assert.NotNil(t, teamDb)
 	defer teamDb.Close()
@@ -522,7 +522,7 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	firstRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
 		WithBodyPattern(wiremock.EqualToJson(firstRequestBodyJson)).
-		InScenario("First Message to Jane").
+		InScenario("Provide tool result").
 		WhenScenarioStateIs(wiremock.ScenarioStateStarted).
 		WillReturnResponse(
 			wiremock.NewResponse().
@@ -535,25 +535,67 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
-	assert.NoError(t, err)
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
-
-	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, 2, len(actualRunRecords))
-
 	secondRequestBodyJson :=
 		`{
-			"model": "gpt-5",
 			"messages": [
-				{"role": "user", "content": "Hello!", "name": "Jim"},
-				{"role": "assistant", "content": "Hi! I am Jane.", "name": "Jane"},
-				{"role": "user", "content": "How are you?", "name": "Jim"}
+				{
+					"content": "Hello! What is weather in Yerevan?",
+					"name": "Jim",
+					"role": "user"
+				},
+				{
+					"name": "Jane",
+					"tool_calls": [
+						{
+							"id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+							"function": {
+								"arguments": "{\"location\":\"Yerevan, Armenia\",\"unit\":\"celsius\"}",
+								"name": "get_current_weather"
+							},
+							"type": "function"
+						}
+					],
+					"role": "assistant"
+				},
+				{
+					"content": "Yerevan: 35 celsius",
+					"tool_call_id": "call_QEtzMbHEUaMIWL3ezXuxRRE5",
+					"role": "tool"
+				}
 			],
+			"model": "gpt-5",
 			"n": 1,
-			"temperature": 1.0
+			"temperature": 1,
+			"parallel_tool_calls": true,
+			"tools": [
+				{
+					"function": {
+						"name": "get_current_weather",
+						"strict": true,
+						"description": "Get the current weather in a given location",
+						"parameters": {
+							"properties": {
+									"location": {
+										"description": "The city and state, e.g. San Francisco, CA",
+										"type": "string"
+									},
+									"unit": {
+										"enum": [
+											"celsius",
+											"fahrenheit"
+										],
+										"type": "string"
+									}
+							},
+							"required": [
+								"location"
+							],
+							"type": "object"
+						}
+					},
+					"type": "function"
+				}
+			]
 		}`
 
 	secondResponseBodyJson :=
@@ -567,7 +609,7 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 					"index": 0,
 					"message": {
 						"role": "assistant",
-						"content": "I'm fine, thank you!",
+						"content": "It is 35 celsius in Yerevan.",
 						"tool_calls": null,
 						"function_call": { "name": "", "arguments": "" },
 						"refusal": "",
@@ -592,7 +634,7 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	secondRequestStub := wiremock.Post(wiremock.URLPathEqualTo("/v1/chat/completions")).
 		WithHeader("Content-Type", wiremock.Matching("application/json.*")).
 		WithBodyPattern(wiremock.EqualToJson(secondRequestBodyJson)).
-		InScenario("Second Message to Jane").
+		InScenario("Provide tool result").
 		WhenScenarioStateIs("first-message-received").
 		WillReturnResponse(
 			wiremock.NewResponse().
@@ -604,6 +646,15 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
+
+	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
+	assert.NoError(t, err)
+	err = agent.Run(ctx, testLogger)
+	assert.NoError(t, err)
+
+	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(actualRunRecords))
 
 	actualActionRunRecord := actualRunRecords[1]
 
