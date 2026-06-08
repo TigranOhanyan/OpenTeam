@@ -20,7 +20,8 @@ var mentionMemberFunction = openai.FunctionDefinitionParam{
 				"type": "string",
 			},
 		},
-		"required": []string{"agent_name", "message"},
+		"additionalProperties": false,
+		"required":             []string{"agent_name", "message"},
 	},
 	Strict: param.NewOpt(true),
 }
@@ -35,7 +36,8 @@ var handoffToAgentFunction = openai.FunctionDefinitionParam{
 				"type": "string",
 			},
 		},
-		"required": []string{"agent_name"},
+		"additionalProperties": false,
+		"required":             []string{"agent_name"},
 	},
 	Strict: param.NewOpt(true),
 }

@@ -57,7 +57,7 @@ func Test_Agent_should_call_llm_with_tools_in_stream_mode(t *testing.T) {
     		        "type": "function",
     		        "function": {
     		            "name": "get_current_weather",
-						"strict": true,
+						
     		            "description": "Get the current weather in a given location",
     		            "parameters": {
     		                "type": "object",
@@ -161,7 +161,6 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wi
     		        "type": "function",
     		        "function": {
     		            "name": "get_current_weather",
-						"strict": true,
     		            "description": "Get the current weather in a given location",
     		            "parameters": {
     		                "type": "object",
@@ -334,7 +333,6 @@ func Test_Agent_should_call_llm_by_providing_tool_result_in_stream_mode(t *testi
     		        "type": "function",
     		        "function": {
     		            "name": "get_current_weather",
-						"strict": true,
     		            "description": "Get the current weather in a given location",
     		            "parameters": {
     		                "type": "object",
@@ -426,7 +424,6 @@ func Test_Agent_should_call_llm_by_providing_tool_result_in_stream_mode(t *testi
 				{
 					"function": {
 						"name": "get_current_weather",
-						"strict": true,
 						"description": "Get the current weather in a given location",
 						"parameters": {
 							"properties": {
@@ -545,7 +542,6 @@ func Test_Agent_should_persist_the_conversation_history_when_providing_tool_resu
     		        "type": "function",
     		        "function": {
     		            "name": "get_current_weather",
-						"strict": true,
     		            "description": "Get the current weather in a given location",
     		            "parameters": {
     		                "type": "object",
@@ -637,7 +633,6 @@ func Test_Agent_should_persist_the_conversation_history_when_providing_tool_resu
 				{
 					"function": {
 						"name": "get_current_weather",
-						"strict": true,
 						"description": "Get the current weather in a given location",
 						"parameters": {
 							"properties": {
@@ -899,7 +894,6 @@ func makeTeamForCallLLWithToolsTestInStreamMode(ctx context.Context, teamDb *Tea
 					},
 					"required": []string{"location"},
 				},
-				Strict: param.NewOpt(true),
 			},
 			Type: "function",
 		},
