@@ -164,16 +164,35 @@ func (agent *agenticReActLoop) reActUnsafe(
 	qtx := agent.runtime.ConversationHistoryDb.Queries.WithTx(trx)
 
 	var llmResponseAsMessage openai.ChatCompletionMessageParamUnion
-	var messageId string
+	messageId := ulid.Make().String()
+	logger = logger.With(zap.String("messageId", messageId))
+
+	chatParamsBytes, err := chatParams.MarshalJSON()
+	if err != nil {
+		logger.Error("failed to marshal chat params", zap.Error(err))
+		return
+	}
+
+	createLlmRequestParams := entities.CreateLlmRequestParams{
+		ID:            messageId,
+		TaskID:        agent.taskRecord.ID,
+		StepID:        agent.stepRecord.ID,
+		OpenaiRequest: json.RawMessage(chatParamsBytes),
+	}
+	_, err = qtx.CreateLlmRequest(ctx, createLlmRequestParams)
+	if err != nil {
+		logger.Error("failed to create llm request", zap.Error(err))
+		return
+	}
 
 	if agent.taskRecord.StreamMode {
-		llmResponseAsMessage, messageId, err = agent.reasonInStreamMode(ctx, qtx, agent.stepRecord, chatParams, logger)
+		llmResponseAsMessage, err = agent.reasonInStreamMode(ctx, qtx, messageId, agent.stepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in stream mode", zap.Error(err))
 			return
 		}
 	} else {
-		llmResponseAsMessage, messageId, err = agent.reasonInOneShotMode(ctx, qtx, agent.stepRecord, chatParams, logger)
+		llmResponseAsMessage, err = agent.reasonInOneShotMode(ctx, qtx, messageId, agent.stepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in one shot mode", zap.Error(err))
 			return
@@ -284,18 +303,16 @@ func (agent *agenticReActLoop) reActUnsafe(
 func (agent *agenticReActLoop) reasonInStreamMode(
 	ctx context.Context,
 	qtx *entities.Queries,
+	messageId string,
 	stepRecord entities.Step,
 	chatParams openai.ChatCompletionNewParams,
 	logger *zap.Logger,
 ) (
 	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
-	messageId string,
 	err error,
 ) {
 
-	responseId := ulid.Make().String()
-	messageId = responseId
-	logger = logger.With(zap.String("responseId", responseId))
+	responseId := messageId
 
 	logger.Info("calling LLM in stream mode...")
 	// 1. Start the stream
@@ -381,17 +398,16 @@ func (agent *agenticReActLoop) reasonInStreamMode(
 func (agent *agenticReActLoop) reasonInOneShotMode(
 	ctx context.Context,
 	qtx *entities.Queries,
+	messageId string,
 	stepRecord entities.Step,
 	chatParams openai.ChatCompletionNewParams,
 	logger *zap.Logger,
 ) (
 	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
-	messageId string,
 	err error,
 ) {
 
-	responseId := ulid.Make().String()
-	messageId = responseId
+	responseId := messageId
 	logger = logger.With(zap.String("responseId", responseId))
 	logger.Info("calling LLM in one shot...")
 

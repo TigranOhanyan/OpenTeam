@@ -39,6 +39,14 @@ type LlmChunkResponse struct {
 	CreatedAt           time.Time       `json:"created_at"`
 }
 
+type LlmRequest struct {
+	ID            string          `json:"id"`
+	StepID        string          `json:"step_id"`
+	TaskID        string          `json:"task_id"`
+	OpenaiRequest json.RawMessage `json:"openai_request"`
+	CreatedAt     time.Time       `json:"created_at"`
+}
+
 type LlmResponse struct {
 	ID             string          `json:"id"`
 	StepID         string          `json:"step_id"`
