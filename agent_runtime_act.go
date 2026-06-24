@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
@@ -28,12 +27,6 @@ func (runtime *AgentRuntime) Act(
 
 	logger = logger.With(zap.String("actionRunId", actionRunId))
 	logger.Info("persisting tool requirement and tool result messages...")
-
-	defer func() {
-		if runtime.ChangeStream != nil {
-			close(runtime.ChangeStream)
-		}
-	}()
 
 	trx, err := runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -173,7 +166,6 @@ func (runtime *AgentRuntime) Act(
 	}
 
 	logger.Info("completing run...")
-	fmt.Println(actionRecord.RunID)
 
 	_, err = qtx.CompleteRun(ctx, actionRecord.RunID)
 	if err != nil {

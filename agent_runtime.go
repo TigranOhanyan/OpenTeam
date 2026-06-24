@@ -12,7 +12,6 @@ import (
 type AgentRuntime struct {
 	ConversationHistoryDb *TeamDb
 	LlmClient             *openai.Client
-	ChangeStream          chan<- ChangeEvent
 }
 
 func (runtime *AgentRuntime) persistMentionsAndMessage(
@@ -22,6 +21,7 @@ func (runtime *AgentRuntime) persistMentionsAndMessage(
 	logger *zap.Logger,
 ) (
 	messageRecord entities.Message,
+	cdcEvents []CdcEvent,
 	err error,
 ) {
 
@@ -72,17 +72,15 @@ func (runtime *AgentRuntime) persistMentionsAndMessage(
 			return
 		}
 
-		if runtime.ChangeStream != nil {
-
-			event := ChangeEvent{
-				Kind:        CdcEventKindMention,
-				ChannelName: mentions.channelName,
-				MemberName:  toMemberRecord.Name,
-				Mention:     &mentionRecord,
-			}
-
-			runtime.ChangeStream <- event
+		event := CdcEvent{
+			Kind:        CdcEventKindMention,
+			ChannelName: mentions.channelName,
+			MemberName:  toMemberRecord.Name,
+			Mention:     &mentionRecord,
 		}
+
+		cdcEvents = append(cdcEvents, event)
+
 	}
 
 	return

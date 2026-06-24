@@ -144,6 +144,7 @@ func (runtime *AgentRuntime) createAgent(
 func (agent *agenticReActLoop) persistMentionsAndMessage(
 	ctx context.Context,
 	qtx *entities.Queries,
+	streamChan chan<- Event,
 	mentions mentions,
 	logger *zap.Logger,
 ) (
@@ -207,17 +208,25 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 			return
 		}
 
-		if agent.runtime.ChangeStream != nil {
-
-			event := ChangeEvent{
-				Kind:        CdcEventKindMention,
-				ChannelName: mentions.channelName,
-				MemberName:  toMemberRecord.Name,
-				Mention:     &mentionRecord,
-			}
-
-			agent.runtime.ChangeStream <- event
+		cdcEvent := CdcEvent{
+			Kind:        CdcEventKindMention,
+			ChannelName: mentions.channelName,
+			MemberName:  toMemberRecord.Name,
+			Mention:     &mentionRecord,
 		}
+
+		event := Event{
+			Kind:     EventKindCdc,
+			CdcEvent: &cdcEvent,
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case streamChan <- event:
+		default:
+		}
+
 	}
 
 	return

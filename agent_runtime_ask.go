@@ -15,19 +15,15 @@ func (runtime *AgentRuntime) Ask(
 	logger *zap.Logger,
 ) (
 	messageId string,
+	cdcEvents []CdcEvent,
 	err error,
 ) {
-	defer func() {
-		if runtime.ChangeStream != nil {
-			close(runtime.ChangeStream)
-		}
-	}()
-
 	trx, err := runtime.ConversationHistoryDb.DB.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("failed to begin transaction", zap.Error(err))
 		return
 	}
+
 	defer func() {
 		if err != nil {
 			trx.Rollback()
@@ -73,7 +69,7 @@ func (runtime *AgentRuntime) Ask(
 		message:        message,
 	}
 
-	messageRecord, err := runtime.persistMentionsAndMessage(ctx, qtx, mention, logger)
+	messageRecord, cdcEvents, err := runtime.persistMentionsAndMessage(ctx, qtx, mention, logger)
 	if err != nil {
 		logger.Error("failed to persist mentions", zap.Error(err))
 		return

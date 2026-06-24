@@ -18,12 +18,13 @@ var InvalidMentionArgumentsError = errors.New("invalid mention arguments")
 
 func (agent *agenticReActLoop) reAct(
 	ctx context.Context,
+	stream chan<- Event,
 	logger *zap.Logger,
 ) (
 	err error,
 ) {
 
-	err = agent.reActUnsafe(ctx, logger)
+	err = agent.reActUnsafe(ctx, stream, logger)
 	if err == nil {
 		return
 	}
@@ -83,6 +84,7 @@ func (agent *agenticReActLoop) reAct(
 
 func (agent *agenticReActLoop) reActUnsafe(
 	ctx context.Context,
+	stream chan<- Event,
 	logger *zap.Logger,
 ) (
 	err error,
@@ -186,7 +188,7 @@ func (agent *agenticReActLoop) reActUnsafe(
 	}
 
 	if agent.taskRecord.StreamMode {
-		llmResponseAsMessage, err = agent.reasonInStreamMode(ctx, qtx, messageId, agent.stepRecord, chatParams, logger)
+		llmResponseAsMessage, err = agent.reasonInStreamMode(ctx, qtx, stream, messageId, agent.stepRecord, chatParams, logger)
 		if err != nil {
 			logger.Error("failed to reason in stream mode", zap.Error(err))
 			return
@@ -216,7 +218,7 @@ func (agent *agenticReActLoop) reActUnsafe(
 	}
 
 	for _, mentionPlan := range orchestrationPlan.mentionsPlans {
-		_, err = agent.persistMention(ctx, qtx, mentionPlan, logger)
+		_, err = agent.persistMention(ctx, qtx, stream, mentionPlan, logger)
 		if err != nil {
 			logger.Error("failed to persist mention", zap.Error(err))
 			return
@@ -225,7 +227,7 @@ func (agent *agenticReActLoop) reActUnsafe(
 
 	for _, actionPlan := range orchestrationPlan.actionPlans {
 
-		_, err = agent.persistAction(ctx, qtx, actionPlan, logger)
+		_, err = agent.persistAction(ctx, qtx, stream, actionPlan, logger)
 		if err != nil {
 			logger.Error("failed to persist action", zap.Error(err))
 			return
@@ -303,6 +305,7 @@ func (agent *agenticReActLoop) reActUnsafe(
 func (agent *agenticReActLoop) reasonInStreamMode(
 	ctx context.Context,
 	qtx *entities.Queries,
+	streamChan chan<- Event,
 	messageId string,
 	stepRecord entities.Step,
 	chatParams openai.ChatCompletionNewParams,
@@ -353,16 +356,22 @@ func (agent *agenticReActLoop) reasonInStreamMode(
 			return
 		}
 
-		if agent.runtime.ChangeStream != nil {
+		cdcEvent := CdcEvent{
+			Kind:        CdcEventKindMessageChunk,
+			MemberName:  agent.memberRecord.Name,
+			ChannelName: agent.channelRecord.Name,
+			Chunk:       &chunkRecord,
+		}
+		event := Event{
+			Kind:     EventKindCdc,
+			CdcEvent: &cdcEvent,
+		}
 
-			event := ChangeEvent{
-				Kind:        CdcEventKindMessageChunk,
-				MemberName:  agent.memberRecord.Name,
-				ChannelName: agent.channelRecord.Name,
-				Chunk:       &chunkRecord,
-			}
-
-			agent.runtime.ChangeStream <- event
+		select {
+		case <-ctx.Done():
+			return
+		case streamChan <- event:
+		default:
 		}
 
 		sequenceNumber++
@@ -521,6 +530,7 @@ func turnIntoAssistantMessage(
 func (agent *agenticReActLoop) persistMention(
 	ctx context.Context,
 	qtx *entities.Queries,
+	stream chan<- Event,
 	mentionPlan mentionPlan,
 	logger *zap.Logger,
 ) (
@@ -547,7 +557,7 @@ func (agent *agenticReActLoop) persistMention(
 		message:        mentionPlan.message,
 	}
 
-	messageRecord, err = agent.persistMentionsAndMessage(ctx, qtx, mentions, logger)
+	messageRecord, err = agent.persistMentionsAndMessage(ctx, qtx, stream, mentions, logger)
 	if err != nil {
 		logger.Error("failed to persist mention", zap.Error(err))
 		return
@@ -560,6 +570,7 @@ func (agent *agenticReActLoop) persistMention(
 func (agent *agenticReActLoop) persistAction(
 	ctx context.Context,
 	qtx *entities.Queries,
+	stream chan<- Event,
 	actionPlan actionPlan,
 	logger *zap.Logger,
 ) (
@@ -599,16 +610,23 @@ func (agent *agenticReActLoop) persistAction(
 		return
 	}
 
-	if agent.runtime.ChangeStream != nil {
+	cdcEvent := CdcEvent{
+		Kind:        CdcEventKindAction,
+		ChannelName: agent.channelRecord.Name,
+		MemberName:  agent.memberRecord.Name,
+		Action:      &actionRecord,
+	}
 
-		event := ChangeEvent{
-			Kind:        CdcEventKindAction,
-			ChannelName: agent.channelRecord.Name,
-			MemberName:  agent.memberRecord.Name,
-			Action:      &actionRecord,
-		}
+	event := Event{
+		Kind:     EventKindCdc,
+		CdcEvent: &cdcEvent,
+	}
 
-		agent.runtime.ChangeStream <- event
+	select {
+	case <-ctx.Done():
+		return
+	case stream <- event:
+	default:
 	}
 	return
 

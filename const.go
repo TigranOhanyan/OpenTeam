@@ -13,11 +13,3 @@ const (
 	VisibilityRole    Visibility = "role"
 	VisibilityTask    Visibility = "task"
 )
-
-type EventKind string
-
-const (
-	EventKindAsking    EventKind = "asking"
-	EventKindReasoning EventKind = "reasoning"
-	EventKindActing    EventKind = "acting"
-)

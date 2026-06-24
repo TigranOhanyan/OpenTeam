@@ -162,10 +162,12 @@ func Test_Agent_should_call_llm_with_tools(t *testing.T) {
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
+	_, _, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+	stream1 := agent.Run(ctx1, testLogger)
+	cancelAndDrainStream(ctx1, cancel1, stream1)
 
 	verifyRequestStub, err := wiremockClient.Verify(requestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -316,11 +318,14 @@ func Test_Agent_should_persist_the_conversation_history_when_calling_llm_with_to
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
+	userMessageId, _, err := agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
 
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+	stream1 := agent.Run(ctx1, testLogger)
+	cancelAndDrainStream(ctx1, cancel1, stream1)
+
 	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(actualRunRecords))
@@ -643,10 +648,12 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
+	_, _, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+	stream1 := agent.Run(ctx1, testLogger)
+	cancelAndDrainStream(ctx1, cancel1, stream1)
 
 	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
@@ -657,8 +664,10 @@ func Test_Agent_should_call_llm_by_providing_tool_result(t *testing.T) {
 	_, _, err = agent.Act(ctx, actualActionRunRecord.ID, "Yerevan: 35 celsius", testLogger)
 	assert.NoError(t, err)
 
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel2()
+	stream2 := agent.Run(ctx2, testLogger)
+	cancelAndDrainStream(ctx2, cancel2, stream2)
 
 	verifyFirstRequestStub, err := wiremockClient.Verify(firstRequestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -924,10 +933,12 @@ func Test_Agent_should_persist_the_conversation_history_when_providing_tool_resu
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
+	_, _, err = agent.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+	stream1 := agent.Run(ctx1, testLogger)
+	cancelAndDrainStream(ctx1, cancel1, stream1)
 
 	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
@@ -938,8 +949,10 @@ func Test_Agent_should_persist_the_conversation_history_when_providing_tool_resu
 	_, _, err = agent.Act(ctx, actualActionRunRecord.ID, "Yerevan: 35 celsius", testLogger)
 	assert.NoError(t, err)
 
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel2()
+	stream2 := agent.Run(ctx2, testLogger)
+	cancelAndDrainStream(ctx2, cancel2, stream2)
 
 	startOfChecking := time.Now()
 	startOfChecking = startOfChecking.Add(time.Second)

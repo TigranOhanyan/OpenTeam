@@ -80,10 +80,12 @@ func Test_Agent_should_call_llm_when_reasoning_in_stream_mode(t *testing.T) {
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	_, _, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream := agent.Run(ctx, testLogger)
+	cancelAndDrainStream(ctx, cancel, stream)
 
 	verifyRequestStub, err := wiremockClient.Verify(requestStub.Request(), 1)
 	assert.NoError(t, err)
@@ -154,9 +156,13 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	_, _, err = agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
-	err = agent.Run(ctx, testLogger)
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+	stream1 := agent.Run(ctx1, testLogger)
+	cancelAndDrainStream(ctx1, cancel1, stream1)
+
 	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(actualRunRecords))
@@ -202,10 +208,13 @@ func Test_Agent_should_call_llm_for_the_followup_conversation_when_reasoning_in_
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	_, err = agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	_, _, err = agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel2()
+	stream2 := agent.Run(ctx2, testLogger)
+	cancelAndDrainStream(ctx2, cancel2, stream2)
+
 	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(actualRunRecords))
@@ -283,11 +292,14 @@ func Test_Agent_should_persist_the_conversation_history_for_the_first_message_wh
 	err = wiremockClient.StubFor(requestStub)
 	assert.NoError(t, err)
 
-	userMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	userMessageId, _, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	err = agent.Run(ctx, testLogger)
-	assert.NoError(t, err)
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+	stream1 := agent.Run(ctx1, testLogger)
+	cancelAndDrainStream(ctx1, cancel1, stream1)
+
 	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(actualRunRecords))
@@ -410,10 +422,14 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(firstRequestStub)
 	assert.NoError(t, err)
 
-	firstUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
+	firstUserMessageId, _, err := agent.Ask(ctx, "Jim", "lobby", "Hello!", testLogger)
 	assert.NoError(t, err)
 
-	err = agent.Run(ctx, testLogger)
+	ctx1, cancel1 := context.WithCancel(ctx)
+	defer cancel1()
+	stream1 := agent.Run(ctx1, testLogger)
+	cancelAndDrainStream(ctx1, cancel1, stream1)
+
 	actualRunRecords, err := teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(actualRunRecords))
@@ -459,10 +475,14 @@ func Test_Agent_should_persist_the_conversation_history_for_the_followup_convers
 	err = wiremockClient.StubFor(secondRequestStub)
 	assert.NoError(t, err)
 
-	secondUserMessageId, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
+	secondUserMessageId, _, err := agent.Ask(ctx, "Jim", "lobby", "How are you?", testLogger)
 	assert.NoError(t, err)
 
-	err = agent.Run(ctx, testLogger)
+	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel1()
+	stream2 := agent.Run(ctx2, testLogger)
+	cancelAndDrainStream(ctx2, cancel2, stream2)
+
 	actualRunRecords, err = teamDb.Queries.GetAllRuns(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(actualRunRecords))
