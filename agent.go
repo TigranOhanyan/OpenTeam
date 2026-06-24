@@ -222,9 +222,9 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 
 		select {
 		case <-ctx.Done():
+			err = ctx.Err()
 			return
 		case streamChan <- event:
-		default:
 		}
 
 	}

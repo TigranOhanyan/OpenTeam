@@ -369,9 +369,9 @@ func (agent *agenticReActLoop) reasonInStreamMode(
 
 		select {
 		case <-ctx.Done():
+			err = ctx.Err()
 			return
 		case streamChan <- event:
-		default:
 		}
 
 		sequenceNumber++
@@ -624,9 +624,9 @@ func (agent *agenticReActLoop) persistAction(
 
 	select {
 	case <-ctx.Done():
+		err = ctx.Err()
 		return
 	case stream <- event:
-	default:
 	}
 	return
 

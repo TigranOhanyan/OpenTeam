@@ -58,7 +58,6 @@ func (runtime *AgentRuntime) Run(
 				case <-ctx.Done():
 					return
 				case stream <- event:
-				default:
 				}
 
 			}
