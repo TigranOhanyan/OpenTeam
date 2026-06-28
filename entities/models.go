@@ -23,6 +23,19 @@ type Channel struct {
 	Description string `json:"description"`
 }
 
+type Execution struct {
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type ExecutionLink struct {
+	ParentID string    `json:"parent_id"`
+	ChildID  string    `json:"child_id"`
+	LinkedAt time.Time `json:"linked_at"`
+}
+
 type Handoff struct {
 	ID         string `json:"id"`
 	StepID     string `json:"step_id"`
@@ -115,6 +128,12 @@ type Task struct {
 	Instruction string         `json:"instruction"`
 	Model       string         `json:"model"`
 	StreamMode  bool           `json:"stream_mode"`
+}
+
+type TaskLink struct {
+	ParentID  string    `json:"parent_id"`
+	ChildID   string    `json:"child_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Tool struct {
