@@ -1,7 +1,6 @@
 package OpenTeam
 
 import (
-	"context"
 	"time"
 
 	testutils "github.com/TigranOhanyan/OpenTeam/testutil"
@@ -39,31 +38,3 @@ var llmOpenAiClient = openai.NewClient(
 	option.WithBaseURL("http://localhost:18443/v1"),
 	option.WithAPIKey(llmApiKey),
 )
-
-var agentProto = AgentRuntime{
-	LlmClient: &llmOpenAiClient,
-}
-
-func cancelAndDrainStream(
-	ctx context.Context,
-	cancel context.CancelFunc,
-	stream <-chan Event,
-) {
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case e, ok := <-stream:
-			if !ok {
-				return
-			}
-			if e.Kind == EventKindLoopReport {
-				if e.Report.NoReadyRunToExecute() {
-					cancel()
-				}
-			}
-		}
-	}
-
-}

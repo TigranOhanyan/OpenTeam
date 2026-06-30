@@ -1,10 +1,6 @@
 package OpenTeam
 
-const (
-	AmountOfChoices   int64   = 1
-	Temperature       float64 = 1.0
-	ParallelToolCalls         = true
-)
+import "errors"
 
 type Visibility string
 
@@ -13,3 +9,6 @@ const (
 	VisibilityRole    Visibility = "role"
 	VisibilityTask    Visibility = "task"
 )
+
+var UnexpectedMessageStructureError = errors.New("unexpected message structure")
+var InvalidMentionArgumentsError = errors.New("invalid mention arguments")
