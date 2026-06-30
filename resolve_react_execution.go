@@ -82,9 +82,9 @@ func (r *reactExecutionResolver) Resolve(
 	latestChildExecutionRecord := allChildren[0]
 
 	if latestChildExecutionRecord.Kind == "reason" {
-		err = handleReasonExecution(ctx, qtx, reactExecution, reactLoop, logger)
+		err = handleActExecution(ctx, qtx, reactExecution, latestChildExecutionRecord, reactLoop, logger)
 		if err != nil {
-			logger.Error("failed to handle reason execution", zap.Error(err))
+			logger.Error("failed to handle act execution", zap.Error(err))
 			return
 		}
 		executionReport.Status = ExecutionStatusExpanded

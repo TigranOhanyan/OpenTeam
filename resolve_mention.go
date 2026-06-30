@@ -29,7 +29,14 @@ func (r *mentionResolver) Resolve(
 	defer func() {
 		if err != nil {
 			trx.Rollback()
+			return
 		}
+		err = trx.Commit()
+		if err != nil {
+			logger.Error("failed to commit transaction", zap.Error(err))
+			return
+		}
+		return
 	}()
 
 	qtx := r.team.ConversationHistoryDb.Queries.WithTx(trx)
