@@ -10,8 +10,8 @@ import (
 )
 
 type Action struct {
-	ID                       string          `json:"id"`
 	ExecutionID              string          `json:"execution_id"`
+	TaskID                   string          `json:"task_id"`
 	LlmResponseID            string          `json:"llm_response_id"`
 	ToolCall                 json.RawMessage `json:"tool_call"`
 	ToolRequirementMessageID interface{}     `json:"tool_requirement_message_id"`
@@ -37,18 +37,17 @@ type ExecutionLink struct {
 }
 
 type LlmBulkResponse struct {
-	ID             string          `json:"id"`
+	ExecutionID    string          `json:"execution_id"`
 	OpenaiResponse json.RawMessage `json:"openai_response"`
 }
 
 type LlmChunkResponse struct {
-	ID                  string          `json:"id"`
+	ExecutionID         string          `json:"execution_id"`
 	SequenceNumber      int64           `json:"sequence_number"`
 	OpenaiChunkResponse json.RawMessage `json:"openai_chunk_response"`
 }
 
 type LlmRequest struct {
-	ID            string          `json:"id"`
 	ExecutionID   string          `json:"execution_id"`
 	TaskID        string          `json:"task_id"`
 	OpenaiRequest json.RawMessage `json:"openai_request"`
@@ -56,7 +55,6 @@ type LlmRequest struct {
 }
 
 type LlmResponse struct {
-	ID          string    `json:"id"`
 	ExecutionID string    `json:"execution_id"`
 	CreatedAt   time.Time `json:"created_at"`
 	Kind        string    `json:"kind"`
@@ -68,7 +66,6 @@ type Member struct {
 }
 
 type Mention struct {
-	ID               string `json:"id"`
 	ExecutionID      string `json:"execution_id"`
 	MessageID        string `json:"message_id"`
 	FromMemberRoleID string `json:"from_member_role_id"`
@@ -88,7 +85,6 @@ type Message struct {
 }
 
 type ReactLoop struct {
-	ID          string `json:"id"`
 	ExecutionID string `json:"execution_id"`
 	TaskID      string `json:"task_id"`
 	Status      string `json:"status"`
@@ -107,8 +103,8 @@ type Task struct {
 }
 
 type TaskExecution struct {
-	ID          string `json:"id"`
 	ExecutionID string `json:"execution_id"`
+	TaskID      string `json:"task_id"`
 }
 
 type TaskLink struct {

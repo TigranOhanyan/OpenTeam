@@ -1,7 +1,6 @@
 -- +goose Up
 CREATE TABLE react_loops (
-    id TEXT PRIMARY KEY,
-    execution_id TEXT NOT NULL,
+    execution_id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'reason', 'act')),
     CONSTRAINT fk_execution_id FOREIGN KEY (execution_id) REFERENCES executions(id),

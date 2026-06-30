@@ -12,7 +12,6 @@ import (
 
 type rawLLMBulkResponse struct {
 	reasonExecutionID string
-	llmRequestId      string
 	llmResponse       *openai.ChatCompletion
 }
 
@@ -41,7 +40,6 @@ func (rawLLMBulkResponse rawLLMBulkResponse) persist(
 	}
 
 	createLlmResponseParams := entities.CreateLlmResponseParams{
-		ID:          rawLLMBulkResponse.llmRequestId,
 		ExecutionID: rawLLMBulkResponse.reasonExecutionID,
 		Kind:        "bulk",
 	}
@@ -53,7 +51,7 @@ func (rawLLMBulkResponse rawLLMBulkResponse) persist(
 	}
 
 	createLlmBulkResponseParams := entities.CreateLlmBulkResponseParams{
-		ID:             rawLLMBulkResponse.llmRequestId,
+		ExecutionID:    rawLLMBulkResponse.reasonExecutionID,
 		OpenaiResponse: json.RawMessage(llmResponseBytes),
 	}
 
@@ -75,7 +73,6 @@ func (rawLLMBulkResponse rawLLMBulkResponse) persist(
 
 type rawLLMChunkResponse struct {
 	reasonExecutionID string
-	llmRequestId      string
 	llmResponse       []openai.ChatCompletionChunk
 }
 
@@ -97,7 +94,6 @@ func (rawLLMChunkResponse rawLLMChunkResponse) persist(
 	logger.Info("LLM chunks called successfully")
 
 	createLlmResponseParams := entities.CreateLlmResponseParams{
-		ID:          rawLLMChunkResponse.llmRequestId,
 		ExecutionID: rawLLMChunkResponse.reasonExecutionID,
 		Kind:        "chunk",
 	}
@@ -110,7 +106,7 @@ func (rawLLMChunkResponse rawLLMChunkResponse) persist(
 
 	for sequenceNumber, chunk := range rawLLMChunkResponse.llmResponse {
 		createChunkParams := entities.CreateLlmChunkResponsesParams{
-			ID:                  rawLLMChunkResponse.llmRequestId,
+			ExecutionID:         rawLLMChunkResponse.reasonExecutionID,
 			SequenceNumber:      int64(sequenceNumber),
 			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
 		}

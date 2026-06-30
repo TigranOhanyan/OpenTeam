@@ -17,6 +17,8 @@ func (r *mentionResolver) Resolve(
 	logger *zap.Logger,
 ) (executionReport ExecutionReport, err error) {
 
+	executionReport.ExecutionID = mentionExecution.ID
+
 	logger = logger.With(zap.String("mentionExecutionId", mentionExecution.ID))
 	logger.Info("resolving mention...")
 
@@ -70,7 +72,7 @@ func (r *mentionResolver) Resolve(
 		return
 	}
 
-	mentionRecord, err := qtx.GetMentionByExecution(ctx, mentionExecution.ID)
+	mentionRecord, err := qtx.GetMention(ctx, mentionExecution.ID)
 	if err != nil {
 		logger.Error("failed to get mention", zap.Error(err))
 		return

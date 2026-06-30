@@ -1,14 +1,12 @@
 -- name: CreateReactLoop :one
-INSERT INTO react_loops (id, execution_id, task_id) VALUES (?, ?, ?) RETURNING *;
+INSERT INTO react_loops (execution_id, task_id) VALUES (?, ?) RETURNING *;
 
 -- name: GetReactLoop :one
-SELECT * FROM react_loops WHERE id = ? LIMIT 1;
+SELECT * FROM react_loops WHERE execution_id = ? LIMIT 1;
 
--- name: GetReactLoopByExecution :one
-SELECT * FROM react_loops WHERE execution_id = ? ORDER BY id ASC;
 
 -- name: GetReactLoops :many
-SELECT * FROM react_loops ORDER BY id ASC;
+SELECT * FROM react_loops ORDER BY execution_id ASC;
 
 -- name: UpdateReactLoopStatus :one
-UPDATE react_loops SET status = ? WHERE id = ? RETURNING *;
+UPDATE react_loops SET status = ? WHERE execution_id = ? RETURNING *;

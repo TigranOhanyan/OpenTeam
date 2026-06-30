@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
-	"github.com/oklog/ulid/v2"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +44,6 @@ func (rawMention rawMention) persist(
 	}
 
 	createMentionParams := entities.CreateMentionParams{
-		ID:               ulid.Make().String(),
 		ExecutionID:      executionRecord.ID,
 		MessageID:        rawMention.messageID,
 		FromMemberRoleID: rawMention.fromRoleID,

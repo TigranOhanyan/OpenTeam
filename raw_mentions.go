@@ -74,7 +74,6 @@ func (mentions rawMentions) persist(
 	logger *zap.Logger,
 ) (
 	messageRecord entities.Message,
-	cdcEvents []CdcEvent,
 	err error,
 ) {
 
@@ -90,28 +89,18 @@ func (mentions rawMentions) persist(
 		}
 
 		rawMention := rawMention{
-			parentExecutionID: messageRecord.ID,
+			parentExecutionID: mentions.executionID,
 			messageID:         messageRecord.ID,
 			fromRoleID:        mentions.fromRoleID,
 			toMemberName:      memberName,
 			message:           mentions.message,
 		}
 
-		mentionRecord, er := rawMention.persist(ctx, qtx, logger)
-		err = er
+		_, err = rawMention.persist(ctx, qtx, logger)
 		if err != nil {
 			logger.Error("failed to persist mention", zap.Error(err))
 			return
 		}
-
-		event := CdcEvent{
-			Kind:        CdcEventKindMention,
-			ChannelName: mentions.channelName,
-			MemberName:  memberName,
-			Mention:     &mentionRecord,
-		}
-
-		cdcEvents = append(cdcEvents, event)
 
 	}
 

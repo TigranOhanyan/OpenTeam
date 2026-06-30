@@ -10,55 +10,28 @@ import (
 )
 
 const createLlmResponse = `-- name: CreateLlmResponse :one
-INSERT INTO llm_responses (id, execution_id, kind) VALUES (?, ?, ?) RETURNING id, execution_id, created_at, kind
+INSERT INTO llm_responses (execution_id, kind) VALUES (?, ?) RETURNING execution_id, created_at, kind
 `
 
 type CreateLlmResponseParams struct {
-	ID          string `json:"id"`
 	ExecutionID string `json:"execution_id"`
 	Kind        string `json:"kind"`
 }
 
 func (q *Queries) CreateLlmResponse(ctx context.Context, arg CreateLlmResponseParams) (LlmResponse, error) {
-	row := q.db.QueryRowContext(ctx, createLlmResponse, arg.ID, arg.ExecutionID, arg.Kind)
+	row := q.db.QueryRowContext(ctx, createLlmResponse, arg.ExecutionID, arg.Kind)
 	var i LlmResponse
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.CreatedAt,
-		&i.Kind,
-	)
+	err := row.Scan(&i.ExecutionID, &i.CreatedAt, &i.Kind)
 	return i, err
 }
 
 const getLlmResponse = `-- name: GetLlmResponse :one
-SELECT id, execution_id, created_at, kind FROM llm_responses WHERE id = ? LIMIT 1
+SELECT execution_id, created_at, kind FROM llm_responses WHERE execution_id = ? LIMIT 1
 `
 
-func (q *Queries) GetLlmResponse(ctx context.Context, id string) (LlmResponse, error) {
-	row := q.db.QueryRowContext(ctx, getLlmResponse, id)
+func (q *Queries) GetLlmResponse(ctx context.Context, executionID string) (LlmResponse, error) {
+	row := q.db.QueryRowContext(ctx, getLlmResponse, executionID)
 	var i LlmResponse
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.CreatedAt,
-		&i.Kind,
-	)
-	return i, err
-}
-
-const getLlmResponseByExecution = `-- name: GetLlmResponseByExecution :one
-SELECT id, execution_id, created_at, kind FROM llm_responses WHERE execution_id = ? LIMIT 1
-`
-
-func (q *Queries) GetLlmResponseByExecution(ctx context.Context, executionID string) (LlmResponse, error) {
-	row := q.db.QueryRowContext(ctx, getLlmResponseByExecution, executionID)
-	var i LlmResponse
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.CreatedAt,
-		&i.Kind,
-	)
+	err := row.Scan(&i.ExecutionID, &i.CreatedAt, &i.Kind)
 	return i, err
 }

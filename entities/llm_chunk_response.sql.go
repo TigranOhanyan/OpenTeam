@@ -11,54 +11,34 @@ import (
 )
 
 const createLlmChunkResponses = `-- name: CreateLlmChunkResponses :exec
-INSERT INTO llm_chunk_responses (id, sequence_number, openai_chunk_response) VALUES (?, ?, ?)
+INSERT INTO llm_chunk_responses (execution_id, sequence_number, openai_chunk_response) VALUES (?, ?, ?)
 `
 
 type CreateLlmChunkResponsesParams struct {
-	ID                  string          `json:"id"`
+	ExecutionID         string          `json:"execution_id"`
 	SequenceNumber      int64           `json:"sequence_number"`
 	OpenaiChunkResponse json.RawMessage `json:"openai_chunk_response"`
 }
 
 func (q *Queries) CreateLlmChunkResponses(ctx context.Context, arg CreateLlmChunkResponsesParams) error {
-	_, err := q.db.ExecContext(ctx, createLlmChunkResponses, arg.ID, arg.SequenceNumber, arg.OpenaiChunkResponse)
+	_, err := q.db.ExecContext(ctx, createLlmChunkResponses, arg.ExecutionID, arg.SequenceNumber, arg.OpenaiChunkResponse)
 	return err
 }
 
-const getLlmChunkResponseByExecution = `-- name: GetLlmChunkResponseByExecution :many
-SELECT 
-    response.execution_id AS execution_id, 
-    chunk.id AS id,
-    chunk.sequence_number AS sequence_number,
-    chunk.openai_chunk_response AS openai_chunk_response
-FROM llm_chunk_responses AS chunk
-INNER JOIN llm_responses AS response ON chunk.id = response.id
-WHERE response.execution_id = ? 
-ORDER BY chunk.sequence_number ASC
+const getLlmChunkResponse = `-- name: GetLlmChunkResponse :many
+SELECT execution_id, sequence_number, openai_chunk_response FROM llm_chunk_responses WHERE execution_id = ? ORDER BY sequence_number ASC
 `
 
-type GetLlmChunkResponseByExecutionRow struct {
-	ExecutionID         string          `json:"execution_id"`
-	ID                  string          `json:"id"`
-	SequenceNumber      int64           `json:"sequence_number"`
-	OpenaiChunkResponse json.RawMessage `json:"openai_chunk_response"`
-}
-
-func (q *Queries) GetLlmChunkResponseByExecution(ctx context.Context, executionID string) ([]GetLlmChunkResponseByExecutionRow, error) {
-	rows, err := q.db.QueryContext(ctx, getLlmChunkResponseByExecution, executionID)
+func (q *Queries) GetLlmChunkResponse(ctx context.Context, executionID string) ([]LlmChunkResponse, error) {
+	rows, err := q.db.QueryContext(ctx, getLlmChunkResponse, executionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetLlmChunkResponseByExecutionRow
+	var items []LlmChunkResponse
 	for rows.Next() {
-		var i GetLlmChunkResponseByExecutionRow
-		if err := rows.Scan(
-			&i.ExecutionID,
-			&i.ID,
-			&i.SequenceNumber,
-			&i.OpenaiChunkResponse,
-		); err != nil {
+		var i LlmChunkResponse
+		if err := rows.Scan(&i.ExecutionID, &i.SequenceNumber, &i.OpenaiChunkResponse); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

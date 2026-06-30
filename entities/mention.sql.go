@@ -10,12 +10,11 @@ import (
 )
 
 const createMention = `-- name: CreateMention :one
-INSERT INTO mentions (id, execution_id, message_id, from_member_role_id, to_member_name, message) 
-VALUES (?, ?, ?, ?, ?, ?) RETURNING id, execution_id, message_id, from_member_role_id, to_member_name, message
+INSERT INTO mentions (execution_id, message_id, from_member_role_id, to_member_name, message) 
+VALUES (?, ?, ?, ?, ?) RETURNING execution_id, message_id, from_member_role_id, to_member_name, message
 `
 
 type CreateMentionParams struct {
-	ID               string `json:"id"`
 	ExecutionID      string `json:"execution_id"`
 	MessageID        string `json:"message_id"`
 	FromMemberRoleID string `json:"from_member_role_id"`
@@ -25,7 +24,6 @@ type CreateMentionParams struct {
 
 func (q *Queries) CreateMention(ctx context.Context, arg CreateMentionParams) (Mention, error) {
 	row := q.db.QueryRowContext(ctx, createMention,
-		arg.ID,
 		arg.ExecutionID,
 		arg.MessageID,
 		arg.FromMemberRoleID,
@@ -34,7 +32,6 @@ func (q *Queries) CreateMention(ctx context.Context, arg CreateMentionParams) (M
 	)
 	var i Mention
 	err := row.Scan(
-		&i.ID,
 		&i.ExecutionID,
 		&i.MessageID,
 		&i.FromMemberRoleID,
@@ -45,54 +42,13 @@ func (q *Queries) CreateMention(ctx context.Context, arg CreateMentionParams) (M
 }
 
 const getMention = `-- name: GetMention :one
-SELECT a.id, a.execution_id, a.message_id, a.from_member_role_id, a.to_member_name, a.message FROM mentions a
-WHERE a.id = ?
-LIMIT 1
+SELECT execution_id, message_id, from_member_role_id, to_member_name, message FROM mentions WHERE execution_id = ? LIMIT 1
 `
 
-func (q *Queries) GetMention(ctx context.Context, id string) (Mention, error) {
-	row := q.db.QueryRowContext(ctx, getMention, id)
+func (q *Queries) GetMention(ctx context.Context, executionID string) (Mention, error) {
+	row := q.db.QueryRowContext(ctx, getMention, executionID)
 	var i Mention
 	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.MessageID,
-		&i.FromMemberRoleID,
-		&i.ToMemberName,
-		&i.Message,
-	)
-	return i, err
-}
-
-const getMentionByExecution = `-- name: GetMentionByExecution :one
-SELECT a.id, a.execution_id, a.message_id, a.from_member_role_id, a.to_member_name, a.message FROM mentions a
-WHERE a.execution_id = ?
-LIMIT 1
-`
-
-func (q *Queries) GetMentionByExecution(ctx context.Context, executionID string) (Mention, error) {
-	row := q.db.QueryRowContext(ctx, getMentionByExecution, executionID)
-	var i Mention
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.MessageID,
-		&i.FromMemberRoleID,
-		&i.ToMemberName,
-		&i.Message,
-	)
-	return i, err
-}
-
-const getMentionsByMessageId = `-- name: GetMentionsByMessageId :one
-SELECT m.id, m.execution_id, m.message_id, m.from_member_role_id, m.to_member_name, m.message FROM mentions m WHERE m.message_id = ?
-`
-
-func (q *Queries) GetMentionsByMessageId(ctx context.Context, messageID string) (Mention, error) {
-	row := q.db.QueryRowContext(ctx, getMentionsByMessageId, messageID)
-	var i Mention
-	err := row.Scan(
-		&i.ID,
 		&i.ExecutionID,
 		&i.MessageID,
 		&i.FromMemberRoleID,

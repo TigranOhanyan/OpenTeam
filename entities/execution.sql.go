@@ -149,114 +149,15 @@ func (q *Queries) GetExecution(ctx context.Context, id string) (Execution, error
 	return i, err
 }
 
-const getLatestChildExecution = `-- name: GetLatestChildExecution :one
-SELECT 
-    child.id, child.kind, child.status, child.created_at
-FROM executions AS child
-INNER JOIN execution_links AS el ON child.id = el.child_id
-WHERE 
-    el.parent_id = ?
-ORDER BY child.id DESC
-LIMIT 1
-`
-
-func (q *Queries) GetLatestChildExecution(ctx context.Context, parentID string) (Execution, error) {
-	row := q.db.QueryRowContext(ctx, getLatestChildExecution, parentID)
-	var i Execution
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.Status,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getOpenExecutions = `-- name: GetOpenExecutions :many
 SELECT id, kind, status, created_at 
 FROM executions 
 WHERE status = 'open' 
-ORDER BY created_at DESC
+ORDER BY id DESC
 `
 
 func (q *Queries) GetOpenExecutions(ctx context.Context) ([]Execution, error) {
 	rows, err := q.db.QueryContext(ctx, getOpenExecutions)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Execution
-	for rows.Next() {
-		var i Execution
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.Status,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getOpenFrontier = `-- name: GetOpenFrontier :many
-SELECT parent.id, parent.kind, parent.status, parent.created_at FROM executions AS parent 
-LEFT JOIN execution_links AS el ON parent.id = el.parent_id
-WHERE 
-    parent.status = 'open'  AND
-    el.child_id IS NULL
-ORDER BY parent.created_at ASC
-`
-
-func (q *Queries) GetOpenFrontier(ctx context.Context) ([]Execution, error) {
-	rows, err := q.db.QueryContext(ctx, getOpenFrontier)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Execution
-	for rows.Next() {
-		var i Execution
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.Status,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getResolvableExecutionCandidates = `-- name: GetResolvableExecutionCandidates :many
-SELECT 
-    parent.id, parent.kind, parent.status, parent.created_at
-FROM executions parent
-INNER JOIN execution_links el ON parent.id = el.parent_id
-INNER JOIN executions child ON el.child_id = child.id
-WHERE 
-    parent.status = 'open' AND
-    child.status = 'closed'
-`
-
-func (q *Queries) GetResolvableExecutionCandidates(ctx context.Context) ([]Execution, error) {
-	rows, err := q.db.QueryContext(ctx, getResolvableExecutionCandidates)
 	if err != nil {
 		return nil, err
 	}

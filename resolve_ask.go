@@ -15,7 +15,6 @@ func (team *Team) Ask(
 	logger *zap.Logger,
 ) (
 	messageId string,
-	cdcEvents []CdcEvent,
 	err error,
 ) {
 	trx, err := team.ConversationHistoryDb.DB.BeginTx(ctx, nil)
@@ -88,7 +87,7 @@ func (team *Team) Ask(
 		message:        message,
 	}
 
-	messageRecord, cdcEvents, err := mentions.persist(ctx, qtx, logger)
+	messageRecord, err := mentions.persist(ctx, qtx, logger)
 	if err != nil {
 		logger.Error("failed to persist mentions and message", zap.Error(err))
 		return

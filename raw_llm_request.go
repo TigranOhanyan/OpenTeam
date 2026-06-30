@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
-	"github.com/oklog/ulid/v2"
 	"github.com/openai/openai-go/v3"
 	"go.uber.org/zap"
 )
@@ -37,8 +36,6 @@ func (rawLLMRequest rawLLMRequest) persist(
 		return
 	}
 
-	messageId := ulid.Make().String()
-
 	chatParamsBytes, err := rawLLMRequest.chatParams.MarshalJSON()
 	if err != nil {
 		logger.Error("failed to marshal chat params", zap.Error(err))
@@ -46,7 +43,6 @@ func (rawLLMRequest rawLLMRequest) persist(
 	}
 
 	createLlmRequestParams := entities.CreateLlmRequestParams{
-		ID:            messageId,
 		ExecutionID:   executionRecord.ID,
 		TaskID:        rawLLMRequest.taskID,
 		OpenaiRequest: json.RawMessage(chatParamsBytes),

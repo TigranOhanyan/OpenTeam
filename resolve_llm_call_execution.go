@@ -29,15 +29,8 @@ func (team *Team) ResolveLLMCallExecutionBulk(
 
 	qtx := team.ConversationHistoryDb.Queries.WithTx(trx)
 
-	llmPartialRequestRecord, err := qtx.GetPartialLlmRequestByExecution(ctx, reasonExecutionId)
-	if err != nil {
-		logger.Error("failed to get llm partial request", zap.Error(err))
-		return
-	}
-
 	rawLLMBulkResponse := rawLLMBulkResponse{
 		reasonExecutionID: reasonExecutionId,
-		llmRequestId:      llmPartialRequestRecord.ID,
 		llmResponse:       llmResponse,
 	}
 
@@ -79,15 +72,8 @@ func (team *Team) ResolveLLMCallExecutionChunk(
 
 	qtx := team.ConversationHistoryDb.Queries.WithTx(trx)
 
-	llmPartialRequestRecord, err := qtx.GetPartialLlmRequestByExecution(ctx, reasonExecutionId)
-	if err != nil {
-		logger.Error("failed to get llm partial request", zap.Error(err))
-		return
-	}
-
 	rawLLMChunkResponse := rawLLMChunkResponse{
 		reasonExecutionID: reasonExecutionId,
-		llmRequestId:      llmPartialRequestRecord.ID,
 		llmResponse:       llmResponse,
 	}
 

@@ -10,61 +10,34 @@ import (
 )
 
 const createReactLoop = `-- name: CreateReactLoop :one
-INSERT INTO react_loops (id, execution_id, task_id) VALUES (?, ?, ?) RETURNING id, execution_id, task_id, status
+INSERT INTO react_loops (execution_id, task_id) VALUES (?, ?) RETURNING execution_id, task_id, status
 `
 
 type CreateReactLoopParams struct {
-	ID          string `json:"id"`
 	ExecutionID string `json:"execution_id"`
 	TaskID      string `json:"task_id"`
 }
 
 func (q *Queries) CreateReactLoop(ctx context.Context, arg CreateReactLoopParams) (ReactLoop, error) {
-	row := q.db.QueryRowContext(ctx, createReactLoop, arg.ID, arg.ExecutionID, arg.TaskID)
+	row := q.db.QueryRowContext(ctx, createReactLoop, arg.ExecutionID, arg.TaskID)
 	var i ReactLoop
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.TaskID,
-		&i.Status,
-	)
+	err := row.Scan(&i.ExecutionID, &i.TaskID, &i.Status)
 	return i, err
 }
 
 const getReactLoop = `-- name: GetReactLoop :one
-SELECT id, execution_id, task_id, status FROM react_loops WHERE id = ? LIMIT 1
+SELECT execution_id, task_id, status FROM react_loops WHERE execution_id = ? LIMIT 1
 `
 
-func (q *Queries) GetReactLoop(ctx context.Context, id string) (ReactLoop, error) {
-	row := q.db.QueryRowContext(ctx, getReactLoop, id)
+func (q *Queries) GetReactLoop(ctx context.Context, executionID string) (ReactLoop, error) {
+	row := q.db.QueryRowContext(ctx, getReactLoop, executionID)
 	var i ReactLoop
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.TaskID,
-		&i.Status,
-	)
-	return i, err
-}
-
-const getReactLoopByExecution = `-- name: GetReactLoopByExecution :one
-SELECT id, execution_id, task_id, status FROM react_loops WHERE execution_id = ? ORDER BY id ASC
-`
-
-func (q *Queries) GetReactLoopByExecution(ctx context.Context, executionID string) (ReactLoop, error) {
-	row := q.db.QueryRowContext(ctx, getReactLoopByExecution, executionID)
-	var i ReactLoop
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.TaskID,
-		&i.Status,
-	)
+	err := row.Scan(&i.ExecutionID, &i.TaskID, &i.Status)
 	return i, err
 }
 
 const getReactLoops = `-- name: GetReactLoops :many
-SELECT id, execution_id, task_id, status FROM react_loops ORDER BY id ASC
+SELECT execution_id, task_id, status FROM react_loops ORDER BY execution_id ASC
 `
 
 func (q *Queries) GetReactLoops(ctx context.Context) ([]ReactLoop, error) {
@@ -76,12 +49,7 @@ func (q *Queries) GetReactLoops(ctx context.Context) ([]ReactLoop, error) {
 	var items []ReactLoop
 	for rows.Next() {
 		var i ReactLoop
-		if err := rows.Scan(
-			&i.ID,
-			&i.ExecutionID,
-			&i.TaskID,
-			&i.Status,
-		); err != nil {
+		if err := rows.Scan(&i.ExecutionID, &i.TaskID, &i.Status); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -96,22 +64,17 @@ func (q *Queries) GetReactLoops(ctx context.Context) ([]ReactLoop, error) {
 }
 
 const updateReactLoopStatus = `-- name: UpdateReactLoopStatus :one
-UPDATE react_loops SET status = ? WHERE id = ? RETURNING id, execution_id, task_id, status
+UPDATE react_loops SET status = ? WHERE execution_id = ? RETURNING execution_id, task_id, status
 `
 
 type UpdateReactLoopStatusParams struct {
-	Status string `json:"status"`
-	ID     string `json:"id"`
+	Status      string `json:"status"`
+	ExecutionID string `json:"execution_id"`
 }
 
 func (q *Queries) UpdateReactLoopStatus(ctx context.Context, arg UpdateReactLoopStatusParams) (ReactLoop, error) {
-	row := q.db.QueryRowContext(ctx, updateReactLoopStatus, arg.Status, arg.ID)
+	row := q.db.QueryRowContext(ctx, updateReactLoopStatus, arg.Status, arg.ExecutionID)
 	var i ReactLoop
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
-		&i.TaskID,
-		&i.Status,
-	)
+	err := row.Scan(&i.ExecutionID, &i.TaskID, &i.Status)
 	return i, err
 }

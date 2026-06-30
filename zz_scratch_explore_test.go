@@ -41,7 +41,7 @@ func Test_ZZ_Explore_pipeline(t *testing.T) {
 	resolver := &generalResolver{team: &team}
 	engine := Engine{ConversationHistoryDb: teamDb}
 
-	_, _, err = team.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
+	_, err = team.Ask(ctx, "Jim", "lobby", "Hello! What is weather in Yerevan?", testLogger)
 	assert.NoError(t, err)
 	dumpExecutions(ctx, teamDb, "after Ask")
 

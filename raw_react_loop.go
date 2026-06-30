@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
-	"github.com/oklog/ulid/v2"
 	"go.uber.org/zap"
 )
 
@@ -35,8 +34,8 @@ func (rawReactLoop rawReactLoop) persist(
 	}
 
 	createReactLoopParams := entities.CreateReactLoopParams{
-		ID:          ulid.Make().String(),
 		ExecutionID: executionRecord.ID,
+		TaskID:      rawReactLoop.taskID,
 	}
 
 	reactLoopRecord, er = qtx.CreateReactLoop(ctx, createReactLoopParams)

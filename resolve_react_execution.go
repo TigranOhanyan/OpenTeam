@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
+	"github.com/oklog/ulid/v2"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
 	"go.uber.org/zap"
@@ -46,7 +47,7 @@ func (r *reactExecutionResolver) Resolve(
 
 	qtx := r.team.ConversationHistoryDb.Queries.WithTx(trx)
 
-	reactLoop, err := qtx.GetReactLoopByExecution(ctx, reactExecution.ID)
+	reactLoop, err := qtx.GetReactLoop(ctx, reactExecution.ID)
 	if err != nil {
 		logger.Error("failed to get react loop", zap.Error(err))
 		return
@@ -117,13 +118,7 @@ func handleActExecution(
 		return
 	}
 
-	llmPartialRequestRecord, err := qtx.GetPartialLlmRequest(ctx, llmResponseRecord.ID)
-	if err != nil {
-		logger.Error("failed to get llm partial request", zap.Error(err))
-		return
-	}
-
-	taskRecord, err := qtx.GetTask(ctx, llmPartialRequestRecord.TaskID)
+	taskRecord, err := qtx.GetTask(ctx, reactLoop.TaskID)
 	if err != nil {
 		logger.Error("failed to get task", zap.Error(err))
 		return
@@ -180,7 +175,7 @@ func handleActExecution(
 
 			for _, mentionPlan := range orchestrationPlan.mentionsPlans {
 				mentions := mentionPlan.rawMentions(roleRecord.ChannelName, roleRecord.MemberName, roleRecord.ID, allMembersName, actExecution.ID)
-				_, _, err = mentions.persist(ctx, qtx, logger)
+				_, err = mentions.persist(ctx, qtx, logger)
 				if err != nil {
 					logger.Error("failed to persist mentions", zap.Error(err))
 					return
@@ -191,7 +186,7 @@ func handleActExecution(
 
 		for _, actionPlan := range orchestrationPlan.actionPlans {
 
-			actionExecution := actionPlan.rawToolCallExecution(actExecution.ID, llmResponseRecord.ID)
+			actionExecution := actionPlan.rawToolCallExecution(actExecution.ID, taskRecord.ID, llmResponseRecord.ExecutionID)
 
 			_, err = actionExecution.persist(ctx, qtx, logger)
 			if err != nil {
@@ -215,7 +210,7 @@ func handleActExecution(
 		}
 
 		createMessageParams := entities.CreateMessageParams{
-			ID:            llmResponseRecord.ID,
+			ID:            ulid.Make().String(),
 			Visibility:    string(VisibilityChannel),
 			ExecutionID:   reasonExecution.ID,
 			ChannelName:   roleRecord.ChannelName,
@@ -233,8 +228,8 @@ func handleActExecution(
 	}
 
 	reactLoopStatusParams := entities.UpdateReactLoopStatusParams{
-		Status: "act",
-		ID:     reactLoop.ID,
+		Status:      "act",
+		ExecutionID: reactLoop.ExecutionID,
 	}
 	_, err = qtx.UpdateReactLoopStatus(ctx, reactLoopStatusParams)
 	if err != nil {
@@ -353,8 +348,8 @@ func handleReasonExecution(
 	}
 
 	reactLoopStatusParams := entities.UpdateReactLoopStatusParams{
-		Status: "reason",
-		ID:     reactLoop.ID,
+		Status:      "reason",
+		ExecutionID: reactLoop.ExecutionID,
 	}
 	_, err = qtx.UpdateReactLoopStatus(ctx, reactLoopStatusParams)
 	if err != nil {
@@ -420,7 +415,7 @@ func llmResponseToMessageParam(
 ) {
 	switch llmResponseRecord.Kind {
 	case "bulk":
-		llmBulkResponseRecord, er := qtx.GetLlmBulkResponseByExecution(ctx, llmResponseRecord.ExecutionID)
+		llmBulkResponseRecord, er := qtx.GetLlmBulkResponse(ctx, llmResponseRecord.ExecutionID)
 		err = er
 		if err != nil {
 			logger.Error("failed to get llm bulk response", zap.Error(err))
@@ -449,7 +444,7 @@ func llmResponseToMessageParam(
 
 		llmResponseAsMessage = choice.Message.ToParam()
 	case "chunk":
-		llmChunkResponseRecords, er := qtx.GetLlmChunkResponseByExecution(ctx, llmResponseRecord.ExecutionID)
+		llmChunkResponseRecords, er := qtx.GetLlmChunkResponse(ctx, llmResponseRecord.ExecutionID)
 		err = er
 		if err != nil {
 			logger.Error("failed to get llm chunk response", zap.Error(err))

@@ -11,41 +11,28 @@ import (
 )
 
 const createLlmBulkResponse = `-- name: CreateLlmBulkResponse :one
-INSERT INTO llm_bulk_responses (id, openai_response) VALUES (?, ?) RETURNING id, openai_response
+INSERT INTO llm_bulk_responses (execution_id, openai_response) VALUES (?, ?) RETURNING execution_id, openai_response
 `
 
 type CreateLlmBulkResponseParams struct {
-	ID             string          `json:"id"`
+	ExecutionID    string          `json:"execution_id"`
 	OpenaiResponse json.RawMessage `json:"openai_response"`
 }
 
 func (q *Queries) CreateLlmBulkResponse(ctx context.Context, arg CreateLlmBulkResponseParams) (LlmBulkResponse, error) {
-	row := q.db.QueryRowContext(ctx, createLlmBulkResponse, arg.ID, arg.OpenaiResponse)
+	row := q.db.QueryRowContext(ctx, createLlmBulkResponse, arg.ExecutionID, arg.OpenaiResponse)
 	var i LlmBulkResponse
-	err := row.Scan(&i.ID, &i.OpenaiResponse)
+	err := row.Scan(&i.ExecutionID, &i.OpenaiResponse)
 	return i, err
 }
 
-const getLlmBulkResponseByExecution = `-- name: GetLlmBulkResponseByExecution :one
-SELECT 
-    response.execution_id AS execution_id, 
-    bulk.id AS id,
-    bulk.openai_response AS openai_response
-FROM llm_bulk_responses AS bulk
-INNER JOIN llm_responses AS response ON bulk.id = response.id
-WHERE response.execution_id = ? 
-LIMIT 1
+const getLlmBulkResponse = `-- name: GetLlmBulkResponse :one
+SELECT execution_id, openai_response FROM llm_bulk_responses WHERE execution_id = ? LIMIT 1
 `
 
-type GetLlmBulkResponseByExecutionRow struct {
-	ExecutionID    string          `json:"execution_id"`
-	ID             string          `json:"id"`
-	OpenaiResponse json.RawMessage `json:"openai_response"`
-}
-
-func (q *Queries) GetLlmBulkResponseByExecution(ctx context.Context, executionID string) (GetLlmBulkResponseByExecutionRow, error) {
-	row := q.db.QueryRowContext(ctx, getLlmBulkResponseByExecution, executionID)
-	var i GetLlmBulkResponseByExecutionRow
-	err := row.Scan(&i.ExecutionID, &i.ID, &i.OpenaiResponse)
+func (q *Queries) GetLlmBulkResponse(ctx context.Context, executionID string) (LlmBulkResponse, error) {
+	row := q.db.QueryRowContext(ctx, getLlmBulkResponse, executionID)
+	var i LlmBulkResponse
+	err := row.Scan(&i.ExecutionID, &i.OpenaiResponse)
 	return i, err
 }

@@ -77,7 +77,7 @@ func (r *taskExecutionResolver) Resolve(
 		return
 	}
 
-	latestChildReActRecord, err := qtx.GetReactLoopByExecution(ctx, latestChild.ID)
+	latestChildReActRecord, err := qtx.GetReactLoop(ctx, latestChild.ID)
 	if err != nil {
 		logger.Error("failed to get react loop", zap.Error(err))
 		return
@@ -91,8 +91,8 @@ func (r *taskExecutionResolver) Resolve(
 	if latestChildReActRecord.Status == "reason" {
 		executionReport.Status = ExecutionStatusClosed
 		_, err = qtx.UpdateReactLoopStatus(ctx, entities.UpdateReactLoopStatusParams{
-			Status: "reason",
-			ID:     latestChildReActRecord.ID,
+			Status:      "reason",
+			ExecutionID: latestChildReActRecord.ExecutionID,
 		})
 		if err != nil {
 			logger.Error("failed to update react loop status", zap.Error(err))

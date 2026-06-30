@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
-	"github.com/oklog/ulid/v2"
 	"github.com/openai/openai-go/v3"
 	"go.uber.org/zap"
 )
@@ -13,6 +12,7 @@ import (
 type rawToolCallExecution struct {
 	parentExecutionID string
 	toolCall          openai.ChatCompletionMessageToolCallUnionParam
+	taskID            string
 	llmResponseID     string
 }
 
@@ -45,8 +45,8 @@ func (rawToolCallExecution rawToolCallExecution) persist(
 	}
 
 	createActionParams := entities.CreateActionParams{
-		ID:            ulid.Make().String(),
 		ExecutionID:   executionRecord.ID,
+		TaskID:        rawToolCallExecution.taskID,
 		ToolCall:      json.RawMessage(toolCallBytes),
 		LlmResponseID: rawToolCallExecution.llmResponseID,
 	}

@@ -46,19 +46,13 @@ func (team *Team) ResolveToolCall(
 
 	qtx := team.ConversationHistoryDb.Queries.WithTx(trx)
 
-	actionRecord, err := qtx.GetActionByExecution(ctx, toolCallExecutionId)
+	actionRecord, err := qtx.GetAction(ctx, toolCallExecutionId)
 	if err != nil {
 		logger.Error("failed to get action", zap.Error(err))
 		return
 	}
 
-	llmPartialRequestRecord, err := qtx.GetPartialLlmRequest(ctx, actionRecord.LlmResponseID)
-	if err != nil {
-		logger.Error("failed to get llm partial request", zap.Error(err))
-		return
-	}
-
-	taskRecord, err := qtx.GetTask(ctx, llmPartialRequestRecord.TaskID)
+	taskRecord, err := qtx.GetTask(ctx, actionRecord.TaskID)
 	if err != nil {
 		logger.Error("failed to get task", zap.Error(err))
 		return
@@ -153,7 +147,7 @@ func (team *Team) ResolveToolCall(
 	}
 
 	updateActionMessagesParams := entities.UpdateActionMessagesParams{
-		ID:                       actionRecord.ID,
+		ExecutionID:              actionRecord.ExecutionID,
 		ToolRequirementMessageID: toolRequirementMessageRecord.ID,
 		ToolResultMessageID:      toolResultMessageRecord.ID,
 	}

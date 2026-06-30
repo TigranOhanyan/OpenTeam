@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
-	"github.com/oklog/ulid/v2"
 	"go.uber.org/zap"
 )
 
@@ -35,7 +34,7 @@ func (rawTaskExecution rawTaskExecution) persist(
 	}
 
 	createTaskExecutionParams := entities.CreateTaskExecutionParams{
-		ID:          ulid.Make().String(),
+		TaskID:      rawTaskExecution.taskID,
 		ExecutionID: executionRecord.ID,
 	}
 

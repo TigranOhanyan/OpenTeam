@@ -1,7 +1,6 @@
 -- +goose Up
 CREATE TABLE llm_requests (
-    id TEXT NOT NULL PRIMARY KEY,
-    execution_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL PRIMARY KEY,
     task_id TEXT NOT NULL,
     openai_request JSON NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

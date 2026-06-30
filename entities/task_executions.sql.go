@@ -10,34 +10,34 @@ import (
 )
 
 const createTaskExecution = `-- name: CreateTaskExecution :one
-INSERT INTO task_executions (id, execution_id) VALUES (?, ?) RETURNING id, execution_id
+INSERT INTO task_executions (execution_id, task_id) VALUES (?, ?) RETURNING execution_id, task_id
 `
 
 type CreateTaskExecutionParams struct {
-	ID          string `json:"id"`
 	ExecutionID string `json:"execution_id"`
+	TaskID      string `json:"task_id"`
 }
 
 func (q *Queries) CreateTaskExecution(ctx context.Context, arg CreateTaskExecutionParams) (TaskExecution, error) {
-	row := q.db.QueryRowContext(ctx, createTaskExecution, arg.ID, arg.ExecutionID)
+	row := q.db.QueryRowContext(ctx, createTaskExecution, arg.ExecutionID, arg.TaskID)
 	var i TaskExecution
-	err := row.Scan(&i.ID, &i.ExecutionID)
+	err := row.Scan(&i.ExecutionID, &i.TaskID)
 	return i, err
 }
 
 const getTaskExecution = `-- name: GetTaskExecution :one
-SELECT id, execution_id FROM task_executions WHERE id = ? LIMIT 1
+SELECT execution_id, task_id FROM task_executions WHERE execution_id = ? LIMIT 1
 `
 
-func (q *Queries) GetTaskExecution(ctx context.Context, id string) (TaskExecution, error) {
-	row := q.db.QueryRowContext(ctx, getTaskExecution, id)
+func (q *Queries) GetTaskExecution(ctx context.Context, executionID string) (TaskExecution, error) {
+	row := q.db.QueryRowContext(ctx, getTaskExecution, executionID)
 	var i TaskExecution
-	err := row.Scan(&i.ID, &i.ExecutionID)
+	err := row.Scan(&i.ExecutionID, &i.TaskID)
 	return i, err
 }
 
 const getTaskExecutions = `-- name: GetTaskExecutions :many
-SELECT id, execution_id FROM task_executions ORDER BY id ASC
+SELECT execution_id, task_id FROM task_executions ORDER BY execution_id ASC
 `
 
 func (q *Queries) GetTaskExecutions(ctx context.Context) ([]TaskExecution, error) {
@@ -49,34 +49,7 @@ func (q *Queries) GetTaskExecutions(ctx context.Context) ([]TaskExecution, error
 	var items []TaskExecution
 	for rows.Next() {
 		var i TaskExecution
-		if err := rows.Scan(&i.ID, &i.ExecutionID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getTaskExecutionsByExecution = `-- name: GetTaskExecutionsByExecution :many
-SELECT id, execution_id FROM task_executions WHERE execution_id = ? ORDER BY id ASC
-`
-
-func (q *Queries) GetTaskExecutionsByExecution(ctx context.Context, executionID string) ([]TaskExecution, error) {
-	rows, err := q.db.QueryContext(ctx, getTaskExecutionsByExecution, executionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []TaskExecution
-	for rows.Next() {
-		var i TaskExecution
-		if err := rows.Scan(&i.ID, &i.ExecutionID); err != nil {
+		if err := rows.Scan(&i.ExecutionID, &i.TaskID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

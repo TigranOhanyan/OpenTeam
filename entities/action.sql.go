@@ -11,27 +11,27 @@ import (
 )
 
 const createAction = `-- name: CreateAction :one
-INSERT INTO actions (id, execution_id, tool_call, llm_response_id) VALUES (?, ?, ?, ?) RETURNING id, execution_id, llm_response_id, tool_call, tool_requirement_message_id, tool_result_message_id
+INSERT INTO actions (execution_id, task_id, tool_call, llm_response_id) VALUES (?, ?, ?, ?) RETURNING execution_id, task_id, llm_response_id, tool_call, tool_requirement_message_id, tool_result_message_id
 `
 
 type CreateActionParams struct {
-	ID            string          `json:"id"`
 	ExecutionID   string          `json:"execution_id"`
+	TaskID        string          `json:"task_id"`
 	ToolCall      json.RawMessage `json:"tool_call"`
 	LlmResponseID string          `json:"llm_response_id"`
 }
 
 func (q *Queries) CreateAction(ctx context.Context, arg CreateActionParams) (Action, error) {
 	row := q.db.QueryRowContext(ctx, createAction,
-		arg.ID,
 		arg.ExecutionID,
+		arg.TaskID,
 		arg.ToolCall,
 		arg.LlmResponseID,
 	)
 	var i Action
 	err := row.Scan(
-		&i.ID,
 		&i.ExecutionID,
+		&i.TaskID,
 		&i.LlmResponseID,
 		&i.ToolCall,
 		&i.ToolRequirementMessageID,
@@ -41,33 +41,15 @@ func (q *Queries) CreateAction(ctx context.Context, arg CreateActionParams) (Act
 }
 
 const getAction = `-- name: GetAction :one
-SELECT id, execution_id, llm_response_id, tool_call, tool_requirement_message_id, tool_result_message_id FROM actions WHERE id = ? LIMIT 1
+SELECT execution_id, task_id, llm_response_id, tool_call, tool_requirement_message_id, tool_result_message_id FROM actions WHERE execution_id = ? LIMIT 1
 `
 
-func (q *Queries) GetAction(ctx context.Context, id string) (Action, error) {
-	row := q.db.QueryRowContext(ctx, getAction, id)
+func (q *Queries) GetAction(ctx context.Context, executionID string) (Action, error) {
+	row := q.db.QueryRowContext(ctx, getAction, executionID)
 	var i Action
 	err := row.Scan(
-		&i.ID,
 		&i.ExecutionID,
-		&i.LlmResponseID,
-		&i.ToolCall,
-		&i.ToolRequirementMessageID,
-		&i.ToolResultMessageID,
-	)
-	return i, err
-}
-
-const getActionByExecution = `-- name: GetActionByExecution :one
-SELECT id, execution_id, llm_response_id, tool_call, tool_requirement_message_id, tool_result_message_id FROM actions WHERE execution_id = ? LIMIT 1
-`
-
-func (q *Queries) GetActionByExecution(ctx context.Context, executionID string) (Action, error) {
-	row := q.db.QueryRowContext(ctx, getActionByExecution, executionID)
-	var i Action
-	err := row.Scan(
-		&i.ID,
-		&i.ExecutionID,
+		&i.TaskID,
 		&i.LlmResponseID,
 		&i.ToolCall,
 		&i.ToolRequirementMessageID,
@@ -79,21 +61,21 @@ func (q *Queries) GetActionByExecution(ctx context.Context, executionID string) 
 const updateActionMessages = `-- name: UpdateActionMessages :one
 UPDATE actions 
 SET tool_requirement_message_id = ?, tool_result_message_id = ? 
-WHERE id = ? RETURNING id, execution_id, llm_response_id, tool_call, tool_requirement_message_id, tool_result_message_id
+WHERE execution_id = ? RETURNING execution_id, task_id, llm_response_id, tool_call, tool_requirement_message_id, tool_result_message_id
 `
 
 type UpdateActionMessagesParams struct {
 	ToolRequirementMessageID interface{} `json:"tool_requirement_message_id"`
 	ToolResultMessageID      interface{} `json:"tool_result_message_id"`
-	ID                       string      `json:"id"`
+	ExecutionID              string      `json:"execution_id"`
 }
 
 func (q *Queries) UpdateActionMessages(ctx context.Context, arg UpdateActionMessagesParams) (Action, error) {
-	row := q.db.QueryRowContext(ctx, updateActionMessages, arg.ToolRequirementMessageID, arg.ToolResultMessageID, arg.ID)
+	row := q.db.QueryRowContext(ctx, updateActionMessages, arg.ToolRequirementMessageID, arg.ToolResultMessageID, arg.ExecutionID)
 	var i Action
 	err := row.Scan(
-		&i.ID,
 		&i.ExecutionID,
+		&i.TaskID,
 		&i.LlmResponseID,
 		&i.ToolCall,
 		&i.ToolRequirementMessageID,

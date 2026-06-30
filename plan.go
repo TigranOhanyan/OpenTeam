@@ -45,11 +45,13 @@ type actionPlan struct {
 
 func (actionPlan *actionPlan) rawToolCallExecution(
 	parentExecutionID string,
+	taskID string,
 	llmResponseID string,
 ) (rawExecution rawToolCallExecution) {
 	rawExecution = rawToolCallExecution{
 		parentExecutionID: parentExecutionID,
 		toolCall:          actionPlan.toolCall,
+		taskID:            taskID,
 		llmResponseID:     llmResponseID,
 	}
 	return
