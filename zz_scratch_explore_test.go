@@ -2,7 +2,6 @@ package OpenTeam
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -125,7 +124,7 @@ func makeTeamForExplore(ctx context.Context, teamDb *TeamDb) (err error) {
 	if err != nil {
 		return err
 	}
-	_, err = q.CreateTask(ctx, entities.CreateTaskParams{ID: "jim-the-user", RoleID: jimLobbyRole.ID, PrevID: sql.NullString{}, Instruction: "user"})
+	_, err = q.CreateTask(ctx, entities.CreateTaskParams{ID: "jim-the-user", RoleID: jimLobbyRole.ID, Instruction: "user"})
 	if err != nil {
 		return err
 	}

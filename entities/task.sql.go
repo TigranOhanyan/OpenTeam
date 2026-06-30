@@ -11,70 +11,87 @@ import (
 )
 
 const createTask = `-- name: CreateTask :one
-INSERT INTO tasks (id, role_id, prev_id, instruction) VALUES (?, ?, ?, ?) RETURNING id, role_id, prev_id, instruction
+INSERT INTO tasks (id, role_id, instruction) VALUES (?, ?, ?) RETURNING id, role_id, instruction
 `
 
 type CreateTaskParams struct {
-	ID          string         `json:"id"`
-	RoleID      string         `json:"role_id"`
-	PrevID      sql.NullString `json:"prev_id"`
-	Instruction string         `json:"instruction"`
+	ID          string `json:"id"`
+	RoleID      string `json:"role_id"`
+	Instruction string `json:"instruction"`
 }
 
 func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error) {
-	row := q.db.QueryRowContext(ctx, createTask,
-		arg.ID,
-		arg.RoleID,
-		arg.PrevID,
-		arg.Instruction,
-	)
+	row := q.db.QueryRowContext(ctx, createTask, arg.ID, arg.RoleID, arg.Instruction)
 	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.RoleID,
-		&i.PrevID,
-		&i.Instruction,
-	)
+	err := row.Scan(&i.ID, &i.RoleID, &i.Instruction)
+	return i, err
+}
+
+const createTaskLink = `-- name: CreateTaskLink :one
+INSERT INTO task_links (parent_id, child_id) VALUES (?, ?) RETURNING parent_id, child_id
+`
+
+type CreateTaskLinkParams struct {
+	ParentID string `json:"parent_id"`
+	ChildID  string `json:"child_id"`
+}
+
+type CreateTaskLinkRow struct {
+	ParentID string `json:"parent_id"`
+	ChildID  string `json:"child_id"`
+}
+
+func (q *Queries) CreateTaskLink(ctx context.Context, arg CreateTaskLinkParams) (CreateTaskLinkRow, error) {
+	row := q.db.QueryRowContext(ctx, createTaskLink, arg.ParentID, arg.ChildID)
+	var i CreateTaskLinkRow
+	err := row.Scan(&i.ParentID, &i.ChildID)
 	return i, err
 }
 
 const getFirstTask = `-- name: GetFirstTask :one
-SELECT id, role_id, prev_id, instruction FROM tasks
-WHERE role_id = ?
-AND prev_id IS NULL
+SELECT id, role_id, instruction, parent_id, child_id, created_at FROM tasks AS t
+LEFT JOIN task_links AS tl ON t.id = tl.child_id
+WHERE t.role_id = ?
+AND tl.parent_id IS NULL
 LIMIT 1
 `
 
-func (q *Queries) GetFirstTask(ctx context.Context, roleID string) (Task, error) {
+type GetFirstTaskRow struct {
+	ID          string         `json:"id"`
+	RoleID      string         `json:"role_id"`
+	Instruction string         `json:"instruction"`
+	ParentID    sql.NullString `json:"parent_id"`
+	ChildID     sql.NullString `json:"child_id"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
+}
+
+func (q *Queries) GetFirstTask(ctx context.Context, roleID string) (GetFirstTaskRow, error) {
 	row := q.db.QueryRowContext(ctx, getFirstTask, roleID)
-	var i Task
+	var i GetFirstTaskRow
 	err := row.Scan(
 		&i.ID,
 		&i.RoleID,
-		&i.PrevID,
 		&i.Instruction,
+		&i.ParentID,
+		&i.ChildID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getTask = `-- name: GetTask :one
-SELECT id, role_id, prev_id, instruction FROM tasks WHERE id = ? LIMIT 1
+SELECT id, role_id, instruction FROM tasks WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetTask(ctx context.Context, id string) (Task, error) {
 	row := q.db.QueryRowContext(ctx, getTask, id)
 	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.RoleID,
-		&i.PrevID,
-		&i.Instruction,
-	)
+	err := row.Scan(&i.ID, &i.RoleID, &i.Instruction)
 	return i, err
 }
 
 const getTasks = `-- name: GetTasks :many
-SELECT id, role_id, prev_id, instruction FROM tasks
+SELECT id, role_id, instruction FROM tasks
 `
 
 func (q *Queries) GetTasks(ctx context.Context) ([]Task, error) {
@@ -86,12 +103,7 @@ func (q *Queries) GetTasks(ctx context.Context) ([]Task, error) {
 	var items []Task
 	for rows.Next() {
 		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.RoleID,
-			&i.PrevID,
-			&i.Instruction,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.RoleID, &i.Instruction); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

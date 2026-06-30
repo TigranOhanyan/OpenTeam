@@ -15,8 +15,6 @@ import (
 
 func Test_Engine_should_resolve_the_execution_if_all_children_are_resolved_and_resolver_is_contracting(t *testing.T) {
 	var err error
-	wiremockClient.Reset()
-	defer wiremockClient.Reset()
 
 	startOfTest := time.Now()
 	startOfTest = startOfTest.Add(-time.Second)
@@ -73,8 +71,6 @@ func Test_Engine_should_resolve_the_execution_if_all_children_are_resolved_and_r
 
 func Test_Engine_when_called_consecutively_should_resolve_the_grandparent_execution_if_all_children_and_grandchildren_are_resolved_and_resolver_is_contracting(t *testing.T) {
 	var err error
-	wiremockClient.Reset()
-	defer wiremockClient.Reset()
 
 	startOfTest := time.Now()
 	startOfTest = startOfTest.Add(-time.Second)
@@ -127,8 +123,6 @@ func Test_Engine_when_called_consecutively_should_resolve_the_grandparent_execut
 
 func Test_Engine_when_all_executions_are_resolved_should_return_an_empty_report(t *testing.T) {
 	var err error
-	wiremockClient.Reset()
-	defer wiremockClient.Reset()
 
 	startOfTest := time.Now()
 	startOfTest = startOfTest.Add(-time.Second)
@@ -171,8 +165,6 @@ func Test_Engine_when_all_executions_are_resolved_should_return_an_empty_report(
 
 func Test_Engine_should_spawn_an_execution_if_all_children_are_resolved_and_resolver_is_expanding(t *testing.T) {
 	var err error
-	wiremockClient.Reset()
-	defer wiremockClient.Reset()
 
 	startOfTest := time.Now()
 	startOfTest = startOfTest.Add(-time.Second)
@@ -233,8 +225,6 @@ func Test_Engine_should_spawn_an_execution_if_all_children_are_resolved_and_reso
 
 func Test_Engine_when_called_consecutively_should_return_empty_report_if_resolver_is_expanding(t *testing.T) {
 	var err error
-	wiremockClient.Reset()
-	defer wiremockClient.Reset()
 
 	teamDbFactory, err := NewTeamDbFactory(tempFolder, testLogger)
 	assert.NoError(t, err)

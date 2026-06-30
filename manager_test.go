@@ -2,7 +2,6 @@ package OpenTeam
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"testing"
 
@@ -156,7 +155,6 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 	janeLobbyDecisionMake, err := q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-lobby-decision-make",
 		RoleID:      janeLobbyRole.ID,
-		PrevID:      sql.NullString{String: janeLobbyFirstImpression.ID, Valid: true},
 		Instruction: "You are a decision maker in the lobby.",
 	})
 	if err != nil {
@@ -164,14 +162,31 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		return err
 	}
 
-	_, err = q.CreateTask(ctx, entities.CreateTaskParams{
+	_, err = q.CreateTaskLink(ctx, entities.CreateTaskLinkParams{
+		ParentID: janeLobbyFirstImpression.ID,
+		ChildID:  janeLobbyDecisionMake.ID,
+	})
+	if err != nil {
+		testLogger.Error("failed to create task link", zap.Error(err))
+		return err
+	}
+
+	janeWarRoomCoordinator, err := q.CreateTask(ctx, entities.CreateTaskParams{
 		ID:          "jane-war-room-coordinator",
 		RoleID:      janeWarRoomRole.ID,
-		PrevID:      sql.NullString{String: janeLobbyDecisionMake.ID, Valid: true},
 		Instruction: "You are a coordinator in the war room.",
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
+		return err
+	}
+
+	_, err = q.CreateTaskLink(ctx, entities.CreateTaskLinkParams{
+		ParentID: janeLobbyDecisionMake.ID,
+		ChildID:  janeWarRoomCoordinator.ID,
+	})
+	if err != nil {
+		testLogger.Error("failed to create task link", zap.Error(err))
 		return err
 	}
 

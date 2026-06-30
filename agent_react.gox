@@ -587,57 +587,6 @@ func (agent *agenticReActLoop) persistAction(
 
 }
 
-func setName(
-	u *openai.ChatCompletionMessageParamUnion,
-	name string,
-) {
-
-	if vt := u.OfDeveloper; vt != nil && !vt.Name.Valid() {
-		vt.Name = param.NewOpt(name)
-	} else if vt := u.OfSystem; vt != nil && !vt.Name.Valid() {
-		vt.Name = param.NewOpt(name)
-	} else if vt := u.OfUser; vt != nil && !vt.Name.Valid() {
-		vt.Name = param.NewOpt(name)
-	} else if vt := u.OfAssistant; vt != nil && !vt.Name.Valid() {
-		vt.Name = param.NewOpt(name)
-	}
-}
-
-func turnIntoUserMessage(
-	message openai.ChatCompletionMessageParamUnion,
-) openai.ChatCompletionMessageParamUnion {
-
-	if param.IsOmitted(message.OfAssistant) {
-		return message
-	}
-
-	assistantContent := message.OfAssistant.Content
-	userContent := openai.ChatCompletionUserMessageParamContentUnion{
-		OfString: assistantContent.OfString,
-	}
-	contentParts := []openai.ChatCompletionContentPartUnionParam{}
-	for _, assistantPart := range assistantContent.OfArrayOfContentParts {
-		if !param.IsOmitted(assistantPart.OfText) {
-
-			textContent := openai.ChatCompletionContentPartUnionParam{
-				OfText: assistantPart.OfText,
-			}
-			contentParts = append(contentParts, textContent)
-		}
-	}
-
-	if len(contentParts) > 0 {
-		userContent.OfArrayOfContentParts = contentParts
-	}
-
-	return openai.ChatCompletionMessageParamUnion{
-		OfUser: &openai.ChatCompletionUserMessageParam{
-			Content: userContent,
-			Name:    message.OfAssistant.Name,
-		},
-	}
-}
-
 func (agent *agenticReActLoop) outOfOffice() openai.ChatCompletionMessageParamUnion {
 	return openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{

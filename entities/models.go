@@ -5,7 +5,6 @@
 package entities
 
 import (
-	"database/sql"
 	"encoding/json"
 	"time"
 )
@@ -102,10 +101,9 @@ type Role struct {
 }
 
 type Task struct {
-	ID          string         `json:"id"`
-	RoleID      string         `json:"role_id"`
-	PrevID      sql.NullString `json:"prev_id"`
-	Instruction string         `json:"instruction"`
+	ID          string `json:"id"`
+	RoleID      string `json:"role_id"`
+	Instruction string `json:"instruction"`
 }
 
 type TaskExecution struct {

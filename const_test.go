@@ -6,12 +6,10 @@ import (
 	testutils "github.com/TigranOhanyan/OpenTeam/testutil"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	"github.com/wiremock/go-wiremock"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var wiremockClient = wiremock.NewClient("http://0.0.0.0:18443")
 var testLogger = MustCreateZuluTimeLogger()
 var tempFolder = testutils.JunkDir
 
