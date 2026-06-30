@@ -102,6 +102,7 @@ FROM executions AS child
 INNER JOIN execution_links AS el ON child.id = el.child_id
 WHERE 
     el.parent_id = ?
+ORDER BY child.id DESC
 `
 
 func (q *Queries) GetChildExecutions(ctx context.Context, parentID string) ([]Execution, error) {
@@ -148,8 +149,34 @@ func (q *Queries) GetExecution(ctx context.Context, id string) (Execution, error
 	return i, err
 }
 
+const getLatestChildExecution = `-- name: GetLatestChildExecution :one
+SELECT 
+    child.id, child.kind, child.status, child.created_at
+FROM executions AS child
+INNER JOIN execution_links AS el ON child.id = el.child_id
+WHERE 
+    el.parent_id = ?
+ORDER BY child.id DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestChildExecution(ctx context.Context, parentID string) (Execution, error) {
+	row := q.db.QueryRowContext(ctx, getLatestChildExecution, parentID)
+	var i Execution
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getOpenExecutions = `-- name: GetOpenExecutions :many
-SELECT id, kind, status, created_at FROM executions WHERE status = 'open' ORDER BY created_at ASC
+SELECT id, kind, status, created_at 
+FROM executions 
+WHERE status = 'open' 
+ORDER BY created_at DESC
 `
 
 func (q *Queries) GetOpenExecutions(ctx context.Context) ([]Execution, error) {

@@ -20,8 +20,43 @@ type mentionPlan struct {
 	toolCall  openai.ChatCompletionMessageToolCallUnionParam
 }
 
+func (mentionPlan *mentionPlan) rawMentions(
+	channelName string,
+	fromMemberName string,
+	fromRoleID string,
+	allMemberNames []string,
+	actExecutionID string,
+) (mentions rawMentions) {
+	mentions = rawMentions{
+		channelName:    channelName,
+		fromMemberName: fromMemberName,
+		fromRoleID:     fromRoleID,
+		toMemberNames:  []string{mentionPlan.agentName},
+		allMemberNames: allMemberNames,
+		message:        mentionPlan.message,
+		executionID:    actExecutionID,
+	}
+	return
+}
+
 type actionPlan struct {
 	toolCall openai.ChatCompletionMessageToolCallUnionParam
+}
+
+func (actionPlan *actionPlan) rawToolCallExecution(
+	parentExecutionID string,
+	llmResponseID string,
+) (rawExecution rawToolCallExecution) {
+	rawExecution = rawToolCallExecution{
+		parentExecutionID: parentExecutionID,
+		toolCall:          actionPlan.toolCall,
+		llmResponseID:     llmResponseID,
+	}
+	return
+}
+
+func (o *plan) hasActions() bool {
+	return len(o.actionPlans) > 0 || len(o.mentionsPlans) > 0
 }
 
 func (o *plan) isFinalReply() bool {

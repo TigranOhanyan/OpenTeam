@@ -1,0 +1,7 @@
+1. in schemas use execution or call (better to have call) suffix the indicate the concrete execution of a given part of OpenTeam ontology
+2. mention may be better to rename to agent (agent_execution or agent call)
+3. act is the fan-in execution of reAct loop that would summarize over tool call, agent calls, and others
+4. maybe it would be even better to adopt call term of execution indicate
+5. give fk names
+6. OPenAI SDK has rawJson fields. Using them would be faster then marshalling the struct. Make a benchmark
+7. No need for returning clause in many sql scripts. they slow down the execution

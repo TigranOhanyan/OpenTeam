@@ -145,7 +145,7 @@ func (agent *agenticReActLoop) persistMentionsAndMessage(
 	ctx context.Context,
 	qtx *entities.Queries,
 	streamChan chan<- Event,
-	mentions mentions,
+	mentions rawMentions,
 	logger *zap.Logger,
 ) (
 	messageRecord entities.Message,

@@ -45,25 +45,28 @@ func Test_Engine_should_resolve_the_execution_if_all_children_are_resolved_and_r
 	resolver := contractingResolver{}
 	executionReports, err := engine.Advance(ctx, testLogger, &resolver)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(executionReports.Reports))
+	assert.Equal(t, 2, len(executionReports.Reports))
 
 	startOfCheck := time.Now()
 	startOfCheck = startOfCheck.Add(time.Second)
 
-	actualExecutionReport := executionReports.Reports[0]
+	actualContractingExecutionReport := executionReports.Reports[0]
 
-	assert.Equal(t, actualExecutionReport.Parent.Kind, "mention")
-	assert.Equal(t, actualExecutionReport.Parent.Status, "closed")
-	assert.Equal(t, actualExecutionReport.Parent.ID, "exec2")
-	assert.Equal(t, len(actualExecutionReport.NewlyOpenedChildren), 0)
+	assert.Equal(t, actualContractingExecutionReport.ExecutionID, "exec2")
+	assert.Equal(t, actualContractingExecutionReport.Status, ExecutionStatusClosed)
 
-	actualExecution, err := teamDb.Queries.GetExecution(ctx, "exec2")
+	actualContractingExecution, err := teamDb.Queries.GetExecution(ctx, "exec2")
 	assert.NoError(t, err)
-	assert.Equal(t, actualExecutionReport.Parent, actualExecution)
+	assert.Equal(t, actualContractingExecution.Status, "closed")
 
-	assert.Equal(t, 1, len(executionReports.OpenExecutionIds))
-	assert.Equal(t, executionReports.OpenExecutionIds[0], "exec1")
-	assert.False(t, executionReports.IsResolved())
+	actualSkippedExecutionReport := executionReports.Reports[1]
+	assert.Equal(t, actualSkippedExecutionReport.ExecutionID, "exec1")
+	assert.Equal(t, actualSkippedExecutionReport.Status, ExecutionStatusSkipped)
+	actualSkippedExecution, err := teamDb.Queries.GetExecution(ctx, "exec1")
+	assert.NoError(t, err)
+	assert.Equal(t, actualSkippedExecution.Status, "open")
+
+	assert.False(t, executionReports.AreAllClosed())
 	assert.False(t, executionReports.IsIdle())
 
 }
@@ -108,20 +111,18 @@ func Test_Engine_when_called_consecutively_should_resolve_the_grandparent_execut
 	startOfCheck := time.Now()
 	startOfCheck = startOfCheck.Add(time.Second)
 
-	actualExecutionReport := executionReports.Reports[0]
+	actualContractingExecutionReport := executionReports.Reports[0]
 
-	assert.Equal(t, actualExecutionReport.Parent.Kind, "mention")
-	assert.Equal(t, actualExecutionReport.Parent.Status, "closed")
-	assert.Equal(t, actualExecutionReport.Parent.ID, "exec1")
-	assert.Equal(t, len(actualExecutionReport.NewlyOpenedChildren), 0)
+	assert.Equal(t, actualContractingExecutionReport.ExecutionID, "exec1")
+	assert.Equal(t, actualContractingExecutionReport.Status, ExecutionStatusClosed)
 
-	actualExecution, err := teamDb.Queries.GetExecution(ctx, "exec1")
+	actualContractingExecution, err := teamDb.Queries.GetExecution(ctx, "exec1")
 	assert.NoError(t, err)
-	assert.Equal(t, actualExecutionReport.Parent, actualExecution)
+	assert.Equal(t, actualContractingExecution.Status, "closed")
 
-	assert.Equal(t, 0, len(executionReports.OpenExecutionIds))
-	assert.True(t, executionReports.IsResolved())
+	assert.True(t, executionReports.AreAllClosed())
 	assert.False(t, executionReports.IsIdle())
+
 }
 
 func Test_Engine_when_all_executions_are_resolved_should_return_an_empty_report(t *testing.T) {
@@ -164,8 +165,7 @@ func Test_Engine_when_all_executions_are_resolved_should_return_an_empty_report(
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(executionReports.Reports))
 
-	assert.Equal(t, 0, len(executionReports.OpenExecutionIds))
-	assert.True(t, executionReports.IsResolved())
+	assert.True(t, executionReports.AreAllClosed())
 	assert.True(t, executionReports.IsIdle())
 }
 
@@ -201,36 +201,33 @@ func Test_Engine_should_spawn_an_execution_if_all_children_are_resolved_and_reso
 	resolver := expandingResolver{}
 	executionReports, err := engine.Advance(ctx, testLogger, &resolver)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(executionReports.Reports))
+	assert.Equal(t, 2, len(executionReports.Reports))
 
 	startOfCheck := time.Now()
 	startOfCheck = startOfCheck.Add(time.Second)
 
-	actualExecutionReport := executionReports.Reports[0]
+	actualExpandingExecutionReport := executionReports.Reports[0]
 
-	assert.Equal(t, actualExecutionReport.Parent.Kind, "mention")
-	assert.Equal(t, actualExecutionReport.Parent.Status, "open")
-	assert.Equal(t, actualExecutionReport.Parent.ID, "exec2")
-	assert.Equal(t, len(actualExecutionReport.NewlyOpenedChildren), 1)
+	assert.Equal(t, actualExpandingExecutionReport.ExecutionID, "exec2")
+	assert.Equal(t, actualExpandingExecutionReport.Status, ExecutionStatusExpanded)
 
-	actualNewExecutionFromReport := actualExecutionReport.NewlyOpenedChildren[0]
-	assert.WithinRange(t, actualNewExecutionFromReport.CreatedAt, startOfTest, startOfCheck)
-	assert.Equal(t, actualNewExecutionFromReport.ID, "exec2-next")
-	assert.Equal(t, actualNewExecutionFromReport.Kind, "mention")
-	assert.Equal(t, actualNewExecutionFromReport.Status, "open")
-
-	actualParentExecution, err := teamDb.Queries.GetExecution(ctx, "exec2")
+	actualExpandingExecution, err := teamDb.Queries.GetExecution(ctx, "exec2")
 	assert.NoError(t, err)
-	assert.Equal(t, actualExecutionReport.Parent, actualParentExecution)
+	assert.Equal(t, actualExpandingExecution.Status, "open")
 
-	actualNewExecutionFromDb, err := teamDb.Queries.GetExecution(ctx, "exec2-next")
+	actualNewExecution, err := teamDb.Queries.GetExecution(ctx, "exec2-next")
 	assert.NoError(t, err)
-	assert.Equal(t, actualNewExecutionFromDb, actualNewExecutionFromReport)
+	assert.Equal(t, actualNewExecution.Status, "open")
+	assert.WithinRange(t, actualNewExecution.CreatedAt, startOfTest, startOfCheck)
 
-	assert.Equal(t, 3, len(executionReports.OpenExecutionIds))
-	expectedOpenExecutionIds := []string{"exec1", "exec2", "exec2-next"}
-	assert.ElementsMatch(t, executionReports.OpenExecutionIds, expectedOpenExecutionIds)
-	assert.False(t, executionReports.IsResolved())
+	actualSkippedExecutionReport := executionReports.Reports[1]
+	assert.Equal(t, actualSkippedExecutionReport.ExecutionID, "exec1")
+	assert.Equal(t, actualSkippedExecutionReport.Status, ExecutionStatusSkipped)
+	actualSkippedExecution, err := teamDb.Queries.GetExecution(ctx, "exec1")
+	assert.NoError(t, err)
+	assert.Equal(t, actualSkippedExecution.Status, "open")
+
+	assert.False(t, executionReports.AreAllClosed())
 	assert.False(t, executionReports.IsIdle())
 }
 
@@ -266,70 +263,162 @@ func Test_Engine_when_called_consecutively_should_return_empty_report_if_resolve
 
 	executionReports, err := engine.Advance(ctx, testLogger, &resolver)
 	assert.NoError(t, err)
-	assert.Equal(t, 0, len(executionReports.Reports))
+	assert.Equal(t, 2, len(executionReports.Reports))
 
-	assert.Equal(t, 3, len(executionReports.OpenExecutionIds))
-	expectedOpenExecutionIds := []string{"exec1", "exec2", "exec2-next"}
-	assert.ElementsMatch(t, executionReports.OpenExecutionIds, expectedOpenExecutionIds)
-	assert.False(t, executionReports.IsResolved())
+	actualFirstSkippedExecutionReport := executionReports.Reports[0]
+	assert.Equal(t, actualFirstSkippedExecutionReport.ExecutionID, "exec2-next")
+	assert.Equal(t, actualFirstSkippedExecutionReport.Status, ExecutionStatusSkipped)
+	actualFirstSkippedExecution, err := teamDb.Queries.GetExecution(ctx, "exec2-next")
+	assert.NoError(t, err)
+	assert.Equal(t, actualFirstSkippedExecution.Status, "open")
+
+	actualSecondSkippedExecutionReport := executionReports.Reports[1]
+	assert.Equal(t, actualSecondSkippedExecutionReport.ExecutionID, "exec2")
+	assert.Equal(t, actualSecondSkippedExecutionReport.Status, ExecutionStatusSkipped)
+	actualSecondSkippedExecution, err := teamDb.Queries.GetExecution(ctx, "exec2")
+	assert.NoError(t, err)
+	assert.Equal(t, actualSecondSkippedExecution.Status, "open")
+
+	actualThirdSkippedExecutionReport := executionReports.Reports[2]
+	assert.Equal(t, actualThirdSkippedExecutionReport.ExecutionID, "exec1")
+	assert.Equal(t, actualThirdSkippedExecutionReport.Status, ExecutionStatusSkipped)
+
+	actualThirdSkippedExecution, err := teamDb.Queries.GetExecution(ctx, "exec1")
+	assert.NoError(t, err)
+	assert.Equal(t, actualThirdSkippedExecution.Status, "open")
+
+	assert.False(t, executionReports.AreAllClosed())
 	assert.True(t, executionReports.IsIdle())
 }
 
-type contractingResolver struct{}
+type contractingResolver struct {
+	conversationHistoryDb *TeamDb
+}
 
 func (r *contractingResolver) Resolve(
 	ctx context.Context,
-	qtx *entities.Queries,
-	parent entities.Execution,
-	children []entities.Execution,
+	execution entities.Execution,
 	logger *zap.Logger,
 ) (
 	executionReport ExecutionReport,
 	err error,
 ) {
 
-	closedExecution, err := qtx.CloseExecution(ctx, parent.ID)
+	executionReport.ExecutionID = execution.ID
+
+	trx, err := r.conversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+
+	defer func() {
+		if err != nil {
+			trx.Rollback()
+		}
+	}()
+
+	qtx := r.conversationHistoryDb.Queries.WithTx(trx)
+
+	children, err := qtx.GetChildExecutions(ctx, execution.ID)
+	if err != nil {
+		logger.Error("failed to get child executions", zap.Error(err))
+		return
+	}
+
+	allChildrenClosed := true
+	for _, child := range children {
+		if child.Status != "closed" {
+			allChildrenClosed = false
+			break
+		}
+	}
+
+	if !allChildrenClosed {
+		executionReport.Status = ExecutionStatusSkipped
+		return
+	}
+
+	_, err = qtx.CloseExecution(ctx, execution.ID)
 	if err != nil {
 		logger.Error("failed to close execution", zap.Error(err))
 		return
 	}
-
-	executionReport = ExecutionReport{
-		Parent:              closedExecution,
-		NewlyOpenedChildren: []entities.Execution{},
-	}
-
+	executionReport.Status = ExecutionStatusClosed
 	return
+
 }
 
-type expandingResolver struct{}
+type expandingResolver struct {
+	conversationHistoryDb *TeamDb
+}
 
 func (r *expandingResolver) Resolve(
 	ctx context.Context,
-	qtx *entities.Queries,
-	parent entities.Execution,
-	children []entities.Execution,
+	execution entities.Execution,
 	logger *zap.Logger,
 ) (
 	executionReport ExecutionReport,
 	err error,
 ) {
 
-	newExecId := fmt.Sprintf("%s-next", parent.ID)
+	trx, err := r.conversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+
+	defer func() {
+		if err != nil {
+			trx.Rollback()
+		}
+	}()
+
+	qtx := r.conversationHistoryDb.Queries.WithTx(trx)
+
+	executionReport.ExecutionID = execution.ID
+
+	children, err := qtx.GetChildExecutions(ctx, execution.ID)
+	if err != nil {
+		logger.Error("failed to get child executions", zap.Error(err))
+		return
+	}
+
+	if len(children) == 0 {
+		executionReport.Status = ExecutionStatusExpanded
+		return
+	}
+
+	allChildrenClosed := true
+	for _, child := range children {
+		if child.Status != "closed" {
+			allChildrenClosed = false
+			break
+		}
+	}
+
+	if !allChildrenClosed {
+		executionReport.Status = ExecutionStatusSkipped
+		return
+
+	}
+
+	newExecId := fmt.Sprintf("%s-next", execution.ID)
 
 	newExecutionParams := entities.CreateExecutionParams{
 		ID:   newExecId,
-		Kind: parent.Kind,
+		Kind: execution.Kind,
 	}
 
-	newExecution, err := qtx.CreateExecution(ctx, newExecutionParams)
+	newExecution, er := qtx.CreateExecution(ctx, newExecutionParams)
+	err = er
 	if err != nil {
 		logger.Error("failed to create execution", zap.Error(err))
 		return
 	}
 
 	newExecutionLinkParams := entities.CreateExecutionLinkParams{
-		ParentID: parent.ID,
+		ParentID: execution.ID,
 		ChildID:  newExecution.ID,
 	}
 	_, err = qtx.CreateExecutionLink(ctx, newExecutionLinkParams)
@@ -337,11 +426,7 @@ func (r *expandingResolver) Resolve(
 		logger.Error("failed to create execution link", zap.Error(err))
 		return
 	}
-	executionReport = ExecutionReport{
-		Parent:              parent,
-		NewlyOpenedChildren: []entities.Execution{newExecution},
-	}
-
+	executionReport.Status = ExecutionStatusExpanded
 	return
 }
 

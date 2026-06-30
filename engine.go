@@ -10,9 +10,7 @@ import (
 type ExecutionResolver interface {
 	Resolve(
 		ctx context.Context,
-		qtx *entities.Queries,
-		parent entities.Execution,
-		children []entities.Execution,
+		execution entities.Execution,
 		logger *zap.Logger,
 	) (executionReport ExecutionReport, err error)
 }
@@ -29,82 +27,28 @@ func (engine *Engine) Advance(
 	executionReports ExecutionReports,
 	err error,
 ) {
-	trx, err := engine.ConversationHistoryDb.DB.BeginTx(ctx, nil)
-	if err != nil {
-		logger.Error("failed to begin transaction", zap.Error(err))
-		return
-	}
-
-	defer func() {
-		if err != nil {
-			trx.Rollback()
-		}
-	}()
-
-	qtx := engine.ConversationHistoryDb.Queries.WithTx(trx)
-
-	resolvableExecutionCandidates, err := qtx.GetResolvableExecutionCandidates(ctx)
+	openExecutions, err := engine.ConversationHistoryDb.Queries.GetOpenExecutions(ctx)
 	if err != nil {
 		logger.Error("failed to get resolvable execution candidates", zap.Error(err))
 		return
 	}
 
-	resolvableExecutions := make(map[string]*parentGroup)
-	for _, row := range resolvableExecutionCandidates {
-		group, ok := resolvableExecutions[row.ID]
-		if !ok {
-			group = &parentGroup{
-				parent: row,
-			}
-
-			children, er := qtx.GetChildExecutions(ctx, row.ID)
-			err = er
-			if err != nil {
-				logger.Error("failed to get child executions", zap.Error(err))
-				return
-			}
-			group.children = children
-
-			isResolvable := group.AllChildrenResolved()
-
-			if isResolvable {
-				resolvableExecutions[row.ID] = group
-			}
-		}
-	}
-
 	executionReports = ExecutionReports{
-		Reports: make([]ExecutionReport, 0, len(resolvableExecutions)),
+		Reports: make([]ExecutionReport, 0, len(openExecutions)),
 	}
 
-	for _, group := range resolvableExecutions {
-		report, er := resolver.Resolve(ctx, qtx, group.parent, group.children, logger)
+	for _, execution := range openExecutions {
+		report, er := resolver.Resolve(ctx, execution, logger)
 		if er != nil {
 			err = er
 			logger.Error(
 				"failed to resolve execution",
 				zap.Error(err),
-				zap.String("parentId", group.parent.ID),
+				zap.String("executionId", execution.ID),
 			)
 			return
 		}
 		executionReports.Reports = append(executionReports.Reports, report)
-	}
-
-	err = trx.Commit()
-	if err != nil {
-		logger.Error("failed to commit transaction", zap.Error(err))
-		return
-	}
-
-	remainingOpenExecutions, err := engine.ConversationHistoryDb.Queries.GetOpenExecutions(ctx)
-	if err != nil {
-		logger.Error("failed to get remaining open executions", zap.Error(err))
-		return
-	}
-	executionReports.OpenExecutionIds = make([]string, 0, len(remainingOpenExecutions))
-	for _, execution := range remainingOpenExecutions {
-		executionReports.OpenExecutionIds = append(executionReports.OpenExecutionIds, execution.ID)
 	}
 
 	return
@@ -128,20 +72,42 @@ func (group *parentGroup) AllChildrenResolved() bool {
 	return true
 }
 
+type ExecutionStatus string
+
+const (
+	ExecutionStatusSkipped  ExecutionStatus = "skipped"
+	ExecutionStatusClosed   ExecutionStatus = "closed"
+	ExecutionStatusExpanded ExecutionStatus = "expanded"
+)
+
 type ExecutionReport struct {
-	Parent              entities.Execution
-	NewlyOpenedChildren []entities.Execution
+	ExecutionID string
+	Status      ExecutionStatus
 }
 
 type ExecutionReports struct {
-	Reports          []ExecutionReport
-	OpenExecutionIds []string
+	Reports []ExecutionReport
 }
 
-func (reports *ExecutionReports) IsResolved() bool {
-	return len(reports.OpenExecutionIds) == 0
+func (reports *ExecutionReports) AreAllClosed() bool {
+
+	for _, report := range reports.Reports {
+		if report.Status != ExecutionStatusClosed {
+			return false
+		}
+	}
+	return true
 }
 
 func (reports *ExecutionReports) IsIdle() bool {
-	return len(reports.Reports) == 0
+	if len(reports.Reports) == 0 {
+		return true
+	}
+
+	for _, report := range reports.Reports {
+		if report.Status != ExecutionStatusSkipped {
+			return false
+		}
+	}
+	return true
 }

@@ -38,7 +38,22 @@ SELECT
 FROM executions AS child
 INNER JOIN execution_links AS el ON child.id = el.child_id
 WHERE 
-    el.parent_id = ?;
+    el.parent_id = ?
+ORDER BY child.id DESC;
+
+    
+-- name: GetLatestChildExecution :one
+SELECT 
+    child.*
+FROM executions AS child
+INNER JOIN execution_links AS el ON child.id = el.child_id
+WHERE 
+    el.parent_id = ?
+ORDER BY child.id DESC
+LIMIT 1;
 
 -- name: GetOpenExecutions :many
-SELECT * FROM executions WHERE status = 'open' ORDER BY created_at ASC;
+SELECT * 
+FROM executions 
+WHERE status = 'open' 
+ORDER BY created_at DESC;

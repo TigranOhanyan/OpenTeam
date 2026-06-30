@@ -1,0 +1,177 @@
+package OpenTeam
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"github.com/TigranOhanyan/OpenTeam/entities"
+	"github.com/oklog/ulid/v2"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/param"
+	"go.uber.org/zap"
+)
+
+var MissingToolCallIdError = errors.New("missing tool call id")
+
+func (team *Team) ResolveToolCall(
+	ctx context.Context,
+	toolCallExecutionId string,
+	toolResult string,
+	logger *zap.Logger,
+) (
+	err error,
+) {
+
+	logger = logger.With(zap.String("toolCallExecutionId", toolCallExecutionId))
+	logger.Info("persisting tool requirement and tool result messages...")
+
+	trx, err := team.ConversationHistoryDb.DB.BeginTx(ctx, nil)
+	if err != nil {
+		logger.Error("failed to begin transaction", zap.Error(err))
+		return
+	}
+	defer func() {
+		if err != nil {
+			trx.Rollback()
+			return
+		}
+		err = trx.Commit()
+		if err != nil {
+			logger.Error("failed to commit transaction", zap.Error(err))
+			return
+		}
+		return
+	}()
+
+	qtx := team.ConversationHistoryDb.Queries.WithTx(trx)
+
+	actionRecord, err := qtx.GetActionByExecution(ctx, toolCallExecutionId)
+	if err != nil {
+		logger.Error("failed to get action", zap.Error(err))
+		return
+	}
+
+	llmPartialRequestRecord, err := qtx.GetPartialLlmRequest(ctx, actionRecord.LlmResponseID)
+	if err != nil {
+		logger.Error("failed to get llm partial request", zap.Error(err))
+		return
+	}
+
+	taskRecord, err := qtx.GetTask(ctx, llmPartialRequestRecord.TaskID)
+	if err != nil {
+		logger.Error("failed to get task", zap.Error(err))
+		return
+	}
+
+	roleRecord, err := qtx.GetRole(ctx, taskRecord.RoleID)
+	if err != nil {
+		logger.Error("failed to get role", zap.Error(err))
+		return
+	}
+
+	channelRecord, err := qtx.GetChannel(ctx, roleRecord.ChannelName)
+	if err != nil {
+		logger.Error("failed to get user room", zap.Error(err))
+		return
+	}
+
+	messageIdPrefix := ulid.Make().String()
+	toolRequirementMessageId := messageIdPrefix + "-0-tool-requirement"
+	toolResultMessageId := messageIdPrefix + "-1-tool-result"
+
+	var toolCallOpenAiParam openai.ChatCompletionMessageToolCallUnionParam
+	err = json.Unmarshal(actionRecord.ToolCall, &toolCallOpenAiParam)
+	if err != nil {
+		logger.Error("failed to unmarshal tool call", zap.Error(err))
+		return
+	}
+
+	toolCallId := toolCallOpenAiParam.GetID()
+	if toolCallId == nil {
+		logger.Error("tool call id is nil")
+		err = MissingToolCallIdError
+		return
+	}
+
+	toolRequirementOpenAiMessage := openai.ChatCompletionMessageParamUnion{
+		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+			ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{toolCallOpenAiParam},
+			Name:      param.NewOpt(roleRecord.MemberName),
+		},
+	}
+
+	toolRequirementOpenAiMessageJson, err := json.Marshal(toolRequirementOpenAiMessage)
+	if err != nil {
+		logger.Error("failed to marshal tool requirement openai message", zap.Error(err))
+		return
+	}
+
+	toolRequirementMessageParams := entities.CreateMessageParams{
+		ID:            toolRequirementMessageId,
+		Visibility:    string(VisibilityTask),
+		ChannelName:   channelRecord.Name,
+		RoleID:        roleRecord.ID,
+		TaskID:        taskRecord.ID,
+		OpenaiMessage: json.RawMessage(toolRequirementOpenAiMessageJson),
+	}
+
+	toolRequirementMessageRecord, err := qtx.CreateMessage(ctx, toolRequirementMessageParams)
+	if err != nil {
+		logger.Error("failed to create tool requirement message", zap.Error(err))
+		return
+	}
+
+	toolResultOpenAiMessage := openai.ChatCompletionMessageParamUnion{
+		OfTool: &openai.ChatCompletionToolMessageParam{
+			Content: openai.ChatCompletionToolMessageParamContentUnion{
+				OfString: param.NewOpt(toolResult),
+			},
+			ToolCallID: *toolCallId,
+		},
+	}
+
+	toolResultOpenAiMessageJson, err := json.Marshal(toolResultOpenAiMessage)
+	if err != nil {
+		logger.Error("failed to marshal tool result openai message", zap.Error(err))
+		return
+	}
+
+	toolResultMessageParams := entities.CreateMessageParams{
+		ID:            toolResultMessageId,
+		Visibility:    string(VisibilityTask),
+		ChannelName:   channelRecord.Name,
+		RoleID:        roleRecord.ID,
+		TaskID:        taskRecord.ID,
+		OpenaiMessage: json.RawMessage(toolResultOpenAiMessageJson),
+	}
+
+	toolResultMessageRecord, err := qtx.CreateMessage(ctx, toolResultMessageParams)
+	if err != nil {
+		logger.Error("failed to create tool result message", zap.Error(err))
+		return
+	}
+
+	updateActionMessagesParams := entities.UpdateActionMessagesParams{
+		ID:                       actionRecord.ID,
+		ToolRequirementMessageID: toolRequirementMessageRecord.ID,
+		ToolResultMessageID:      toolResultMessageRecord.ID,
+	}
+
+	actionRecord, err = qtx.UpdateActionMessages(ctx, updateActionMessagesParams)
+	if err != nil {
+		logger.Error("failed to update action", zap.Error(err))
+		return
+	}
+
+	logger.Info("closing execution...")
+
+	_, err = qtx.CloseExecution(ctx, toolCallExecutionId)
+	if err != nil {
+		logger.Error("failed to close execution", zap.Error(err))
+		return
+	}
+
+	return
+
+}

@@ -17,7 +17,7 @@ type AgentRuntime struct {
 func (runtime *AgentRuntime) persistMentionsAndMessage(
 	ctx context.Context,
 	qtx *entities.Queries,
-	mentions mentions,
+	mentions rawMentions,
 	logger *zap.Logger,
 ) (
 	messageRecord entities.Message,

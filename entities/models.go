@@ -12,7 +12,8 @@ import (
 
 type Action struct {
 	ID                       string          `json:"id"`
-	RunID                    string          `json:"run_id"`
+	ExecutionID              string          `json:"execution_id"`
+	LlmResponseID            string          `json:"llm_response_id"`
 	ToolCall                 json.RawMessage `json:"tool_call"`
 	ToolRequirementMessageID interface{}     `json:"tool_requirement_message_id"`
 	ToolResultMessageID      interface{}     `json:"tool_result_message_id"`
@@ -36,36 +37,30 @@ type ExecutionLink struct {
 	LinkedAt time.Time `json:"linked_at"`
 }
 
-type Handoff struct {
-	ID         string `json:"id"`
-	StepID     string `json:"step_id"`
-	ToAgent    string `json:"to_agent"`
-	ToolCallID string `json:"tool_call_id"`
+type LlmBulkResponse struct {
+	ID             string          `json:"id"`
+	OpenaiResponse json.RawMessage `json:"openai_response"`
 }
 
 type LlmChunkResponse struct {
 	ID                  string          `json:"id"`
 	SequenceNumber      int64           `json:"sequence_number"`
-	StepID              string          `json:"step_id"`
-	TaskID              string          `json:"task_id"`
 	OpenaiChunkResponse json.RawMessage `json:"openai_chunk_response"`
-	CreatedAt           time.Time       `json:"created_at"`
 }
 
 type LlmRequest struct {
 	ID            string          `json:"id"`
-	StepID        string          `json:"step_id"`
+	ExecutionID   string          `json:"execution_id"`
 	TaskID        string          `json:"task_id"`
 	OpenaiRequest json.RawMessage `json:"openai_request"`
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
 type LlmResponse struct {
-	ID             string          `json:"id"`
-	StepID         string          `json:"step_id"`
-	TaskID         string          `json:"task_id"`
-	OpenaiResponse json.RawMessage `json:"openai_response"`
-	CreatedAt      time.Time       `json:"created_at"`
+	ID          string    `json:"id"`
+	ExecutionID string    `json:"execution_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	Kind        string    `json:"kind"`
 }
 
 type Member struct {
@@ -75,7 +70,7 @@ type Member struct {
 
 type Mention struct {
 	ID               string `json:"id"`
-	RunID            string `json:"run_id"`
+	ExecutionID      string `json:"execution_id"`
 	MessageID        string `json:"message_id"`
 	FromMemberRoleID string `json:"from_member_role_id"`
 	ToMemberName     string `json:"to_member_name"`
@@ -84,7 +79,7 @@ type Mention struct {
 
 type Message struct {
 	ID            string          `json:"id"`
-	StepID        interface{}     `json:"step_id"`
+	ExecutionID   string          `json:"execution_id"`
 	ChannelName   string          `json:"channel_name"`
 	RoleID        string          `json:"role_id"`
 	TaskID        interface{}     `json:"task_id"`
@@ -93,32 +88,17 @@ type Message struct {
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
+type ReactLoop struct {
+	ID          string `json:"id"`
+	ExecutionID string `json:"execution_id"`
+	TaskID      string `json:"task_id"`
+	Status      string `json:"status"`
+}
+
 type Role struct {
 	ID          string `json:"id"`
 	MemberName  string `json:"member_name"`
 	ChannelName string `json:"channel_name"`
-}
-
-type Run struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-type RunLink struct {
-	ParentRunID    string    `json:"parent_run_id"`
-	ChildRunID     string    `json:"child_run_id"`
-	SpawningStepID string    `json:"spawning_step_id"`
-	LinkedAt       time.Time `json:"linked_at"`
-}
-
-type Step struct {
-	ID        string    `json:"id"`
-	RunID     string    `json:"run_id"`
-	TaskID    string    `json:"task_id"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 type Task struct {
@@ -126,8 +106,11 @@ type Task struct {
 	RoleID      string         `json:"role_id"`
 	PrevID      sql.NullString `json:"prev_id"`
 	Instruction string         `json:"instruction"`
-	Model       string         `json:"model"`
-	StreamMode  bool           `json:"stream_mode"`
+}
+
+type TaskExecution struct {
+	ID          string `json:"id"`
+	ExecutionID string `json:"execution_id"`
 }
 
 type TaskLink struct {

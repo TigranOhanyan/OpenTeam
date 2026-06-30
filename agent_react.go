@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/TigranOhanyan/OpenTeam/entities"
 	"github.com/oklog/ulid/v2"
@@ -302,230 +301,186 @@ func (agent *agenticReActLoop) reActUnsafe(
 	return
 }
 
-func (agent *agenticReActLoop) reasonInStreamMode(
-	ctx context.Context,
-	qtx *entities.Queries,
-	streamChan chan<- Event,
-	messageId string,
-	stepRecord entities.Step,
-	chatParams openai.ChatCompletionNewParams,
-	logger *zap.Logger,
-) (
-	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
-	err error,
-) {
+// func (agent *agenticReActLoop) reasonInStreamMode(
+// 	ctx context.Context,
+// 	qtx *entities.Queries,
+// 	streamChan chan<- Event,
+// 	messageId string,
+// 	stepRecord entities.Step,
+// 	chatParams openai.ChatCompletionNewParams,
+// 	logger *zap.Logger,
+// ) (
+// 	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
+// 	err error,
+// ) {
 
-	responseId := messageId
+// 	responseId := messageId
 
-	logger.Info("calling LLM in stream mode...")
-	// 1. Start the stream
-	stream := agent.runtime.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
-	defer stream.Close()
+// 	logger.Info("calling LLM in stream mode...")
+// 	// 1. Start the stream
+// 	stream := agent.runtime.LlmClient.Chat.Completions.NewStreaming(ctx, chatParams)
+// 	defer stream.Close()
 
-	// 3. Iterate over the stream
-	sequenceNumber := 0
-	acc := openai.ChatCompletionAccumulator{}
+// 	// 3. Iterate over the stream
+// 	sequenceNumber := 0
+// 	acc := openai.ChatCompletionAccumulator{}
 
-	for stream.Next() {
+// 	for stream.Next() {
 
-		logger := logger.With(zap.Int("sequenceNumber", sequenceNumber))
+// 		logger := logger.With(zap.Int("sequenceNumber", sequenceNumber))
 
-		err = stream.Err()
-		if err != nil {
-			logger.Error("stream error", zap.Error(err))
-			return
-		}
+// 		err = stream.Err()
+// 		if err != nil {
+// 			logger.Error("stream error", zap.Error(err))
+// 			return
+// 		}
 
-		chunk := stream.Current()
+// 		chunk := stream.Current()
 
-		logger.Info("processing chunk")
+// 		logger.Info("processing chunk")
 
-		// Persist the raw chunk to the database immediately
-		createChunkParams := entities.CreateLlmChunkResponsesParams{
-			ID:                  responseId,
-			SequenceNumber:      int64(sequenceNumber),
-			StepID:              stepRecord.ID,
-			TaskID:              agent.taskRecord.ID,
-			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
-		}
+// 		// Persist the raw chunk to the database immediately
+// 		createChunkParams := entities.CreateLlmChunkResponsesParams{
+// 			ID:                  responseId,
+// 			SequenceNumber:      int64(sequenceNumber),
+// 			StepID:              stepRecord.ID,
+// 			TaskID:              agent.taskRecord.ID,
+// 			OpenaiChunkResponse: json.RawMessage(chunk.RawJSON()),
+// 		}
 
-		chunkRecord, er := qtx.CreateLlmChunkResponses(ctx, createChunkParams)
-		err = er
-		if err != nil {
-			logger.Error("failed to create chunk", zap.Error(err))
-			return
-		}
+// 		chunkRecord, er := qtx.CreateLlmChunkResponses(ctx, createChunkParams)
+// 		err = er
+// 		if err != nil {
+// 			logger.Error("failed to create chunk", zap.Error(err))
+// 			return
+// 		}
 
-		cdcEvent := CdcEvent{
-			Kind:        CdcEventKindMessageChunk,
-			MemberName:  agent.memberRecord.Name,
-			ChannelName: agent.channelRecord.Name,
-			Chunk:       &chunkRecord,
-		}
-		event := Event{
-			Kind:     EventKindCdc,
-			CdcEvent: &cdcEvent,
-		}
+// 		cdcEvent := CdcEvent{
+// 			Kind:        CdcEventKindMessageChunk,
+// 			MemberName:  agent.memberRecord.Name,
+// 			ChannelName: agent.channelRecord.Name,
+// 			Chunk:       &chunkRecord,
+// 		}
+// 		event := Event{
+// 			Kind:     EventKindCdc,
+// 			CdcEvent: &cdcEvent,
+// 		}
 
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-			return
-		case streamChan <- event:
-		}
+// 		select {
+// 		case <-ctx.Done():
+// 			err = ctx.Err()
+// 			return
+// 		case streamChan <- event:
+// 		}
 
-		sequenceNumber++
-		acc.AddChunk(chunk)
-	}
-	// 4. Check for stream errors
-	if err = stream.Err(); err != nil {
-		logger.Error("stream error", zap.Error(err))
-		return
-	}
+// 		sequenceNumber++
+// 		acc.AddChunk(chunk)
+// 	}
+// 	// 4. Check for stream errors
+// 	if err = stream.Err(); err != nil {
+// 		logger.Error("stream error", zap.Error(err))
+// 		return
+// 	}
 
-	choices := acc.Choices
-	amountOfChoices := len(choices)
-	if amountOfChoices == 0 {
-		logger.Error("no choices in accumulated LLM chunk response")
-		err = fmt.Errorf("no choices in accumulated LLM chunk response")
-		return
-	}
+// 	choices := acc.Choices
+// 	amountOfChoices := len(choices)
+// 	if amountOfChoices == 0 {
+// 		logger.Error("no choices in accumulated LLM chunk response")
+// 		err = fmt.Errorf("no choices in accumulated LLM chunk response")
+// 		return
+// 	}
 
-	if amountOfChoices > 1 {
-		logger.Error("multiple choices in accumulated LLM chunk response", zap.Int("count", amountOfChoices))
-		err = fmt.Errorf("multiple choices in accumulated LLM chunk response")
-		return
-	}
-	choice := choices[0]
+// 	if amountOfChoices > 1 {
+// 		logger.Error("multiple choices in accumulated LLM chunk response", zap.Int("count", amountOfChoices))
+// 		err = fmt.Errorf("multiple choices in accumulated LLM chunk response")
+// 		return
+// 	}
+// 	choice := choices[0]
 
-	llmResponseAsMessage = choice.Message.ToParam()
+// 	llmResponseAsMessage = choice.Message.ToParam()
 
-	return
+// 	return
 
-}
+// }
 
-func (agent *agenticReActLoop) reasonInOneShotMode(
-	ctx context.Context,
-	qtx *entities.Queries,
-	messageId string,
-	stepRecord entities.Step,
-	chatParams openai.ChatCompletionNewParams,
-	logger *zap.Logger,
-) (
-	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
-	err error,
-) {
+// func (agent *agenticReActLoop) reasonInOneShotMode(
+// 	ctx context.Context,
+// 	qtx *entities.Queries,
+// 	messageId string,
+// 	stepRecord entities.Step,
+// 	chatParams openai.ChatCompletionNewParams,
+// 	logger *zap.Logger,
+// ) (
+// 	llmResponseAsMessage openai.ChatCompletionMessageParamUnion,
+// 	err error,
+// ) {
 
-	responseId := messageId
-	logger = logger.With(zap.String("responseId", responseId))
-	logger.Info("calling LLM in one shot...")
+// 	responseId := messageId
+// 	logger = logger.With(zap.String("responseId", responseId))
+// 	logger.Info("calling LLM in one shot...")
 
-	maybeLlmResponse, er := agent.runtime.LlmClient.Chat.Completions.New(ctx, chatParams)
-	err = er
-	if err != nil {
-		logger.Error("failed to call LLM", zap.Error(err))
-		return
-	}
+// 	maybeLlmResponse, er := agent.runtime.LlmClient.Chat.Completions.New(ctx, chatParams)
+// 	err = er
+// 	if err != nil {
+// 		logger.Error("failed to call LLM", zap.Error(err))
+// 		return
+// 	}
 
-	if maybeLlmResponse == nil {
-		logger.Error("no llm response received")
-		err = fmt.Errorf("no llm response received")
-		return
-	}
+// 	if maybeLlmResponse == nil {
+// 		logger.Error("no llm response received")
+// 		err = fmt.Errorf("no llm response received")
+// 		return
+// 	}
 
-	llmResponse := *maybeLlmResponse
+// 	llmResponse := *maybeLlmResponse
 
-	if len(llmResponse.Choices) == 0 {
-		logger.Error("no choices in llm response")
-		err = fmt.Errorf("no choices in llm response")
-		return
-	}
+// 	if len(llmResponse.Choices) == 0 {
+// 		logger.Error("no choices in llm response")
+// 		err = fmt.Errorf("no choices in llm response")
+// 		return
+// 	}
 
-	logger.Info("LLM called successfully")
+// 	logger.Info("LLM called successfully")
 
-	llmResponseBytes, er := json.Marshal(llmResponse)
-	err = er
-	if err != nil {
-		logger.Error("failed to marshal llm response", zap.Error(err))
-		return
-	}
+// 	llmResponseBytes, er := json.Marshal(llmResponse)
+// 	err = er
+// 	if err != nil {
+// 		logger.Error("failed to marshal llm response", zap.Error(err))
+// 		return
+// 	}
 
-	createLlmResponseParams := entities.CreateLlmResponseParams{
-		ID:             responseId,
-		TaskID:         agent.taskRecord.ID,
-		StepID:         stepRecord.ID,
-		OpenaiResponse: json.RawMessage(llmResponseBytes),
-	}
+// 	createLlmResponseParams := entities.CreateLlmResponseParams{
+// 		ID:             responseId,
+// 		TaskID:         agent.taskRecord.ID,
+// 		StepID:         stepRecord.ID,
+// 		OpenaiResponse: json.RawMessage(llmResponseBytes),
+// 	}
 
-	_, err = qtx.CreateLlmResponse(ctx, createLlmResponseParams)
-	if err != nil {
-		logger.Error("failed to create new response", zap.Error(err))
-		return
-	}
+// 	_, err = qtx.CreateLlmResponse(ctx, createLlmResponseParams)
+// 	if err != nil {
+// 		logger.Error("failed to create new response", zap.Error(err))
+// 		return
+// 	}
 
-	choices := llmResponse.Choices
-	amountOfChoices := len(choices)
-	if amountOfChoices == 0 {
-		logger.Error("no choices in LLM response")
-		err = fmt.Errorf("no choices in LLM response")
-		return
-	}
+// 	choices := llmResponse.Choices
+// 	amountOfChoices := len(choices)
+// 	if amountOfChoices == 0 {
+// 		logger.Error("no choices in LLM response")
+// 		err = fmt.Errorf("no choices in LLM response")
+// 		return
+// 	}
 
-	if amountOfChoices > 1 {
-		logger.Error("multiple choices in LLM response", zap.Int("count", amountOfChoices))
-		err = fmt.Errorf("multiple choices in LLM response")
-		return
-	}
-	choice := choices[0]
+// 	if amountOfChoices > 1 {
+// 		logger.Error("multiple choices in LLM response", zap.Int("count", amountOfChoices))
+// 		err = fmt.Errorf("multiple choices in LLM response")
+// 		return
+// 	}
+// 	choice := choices[0]
 
-	llmResponseAsMessage = choice.Message.ToParam()
+// 	llmResponseAsMessage = choice.Message.ToParam()
 
-	return
-}
-
-func turnIntoAssistantMessage(
-	message openai.ChatCompletionMessageParamUnion,
-	name string,
-) openai.ChatCompletionMessageParamUnion {
-
-	if param.IsOmitted(message.OfUser) {
-		return message
-	}
-
-	if param.IsOmitted(message.OfUser.Name) {
-		return message
-	}
-
-	if message.OfUser.Name.Value != name {
-		return message
-	}
-
-	userContent := message.OfUser.Content
-	assistantContent := openai.ChatCompletionAssistantMessageParamContentUnion{
-		OfString: userContent.OfString,
-	}
-	assistantContentParts := []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{}
-	for _, userContentPart := range userContent.OfArrayOfContentParts {
-		if !param.IsOmitted(userContentPart.OfText) {
-
-			textContent := openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
-				OfText: userContentPart.OfText,
-			}
-			assistantContentParts = append(assistantContentParts, textContent)
-		}
-	}
-
-	if len(assistantContentParts) > 0 {
-		assistantContent.OfArrayOfContentParts = assistantContentParts
-	}
-
-	return openai.ChatCompletionMessageParamUnion{
-		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-			Content: assistantContent,
-			Name:    message.OfUser.Name,
-		},
-	}
-}
+// 	return
+// }
 
 func (agent *agenticReActLoop) persistMention(
 	ctx context.Context,
@@ -548,7 +503,7 @@ func (agent *agenticReActLoop) persistMention(
 		allMembersName[i] = roleRecord.MemberName
 	}
 
-	mentions := mentions{
+	mentions := rawMentions{
 		channelName:    agent.channelRecord.Name,
 		fromMemberName: agent.memberRecord.Name,
 		fromRoleID:     agent.roleRecord.ID,

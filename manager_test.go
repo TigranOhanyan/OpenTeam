@@ -147,8 +147,6 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		ID:          "jane-lobby-first-impression",
 		RoleID:      janeLobbyRole.ID,
 		Instruction: "You are a first impression in the lobby.",
-		Model:       "gpt-5",
-		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -160,8 +158,6 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		RoleID:      janeLobbyRole.ID,
 		PrevID:      sql.NullString{String: janeLobbyFirstImpression.ID, Valid: true},
 		Instruction: "You are a decision maker in the lobby.",
-		Model:       "gpt-5",
-		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -173,8 +169,6 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		RoleID:      janeWarRoomRole.ID,
 		PrevID:      sql.NullString{String: janeLobbyDecisionMake.ID, Valid: true},
 		Instruction: "You are a coordinator in the war room.",
-		Model:       "gpt-5",
-		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -195,8 +189,6 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		ID:          "john-war-room-expert",
 		RoleID:      johnWarRoomRole.ID,
 		Instruction: "You are a expert in the war room.",
-		Model:       "gpt-5",
-		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
@@ -217,8 +209,6 @@ func makeTeamForManagerTest(ctx context.Context, teamDb *TeamDb) error {
 		ID:          "jim-the-user",
 		RoleID:      jimLobbyRole.ID,
 		Instruction: "You are the user.",
-		Model:       "gpt-5",
-		StreamMode:  true,
 	})
 	if err != nil {
 		testLogger.Error("failed to create task", zap.Error(err))
